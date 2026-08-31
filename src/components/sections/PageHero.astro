@@ -1,0 +1,44 @@
+---
+/**
+ * PageHero — standard inner-page header: breadcrumbs + eyebrow + H1 + subtitle.
+ * Use it at the top of every non-landing page for consistent chrome
+ * (pattern from the catalogue reference's CatalogLayout).
+ *
+ * CMS: this component owns no collection of its own — the copy always arrives
+ * as props from the page. Pass `cmsScope` when that copy comes from a content
+ * collection and the client must be able to click-edit it; omit it for pages
+ * whose header is structural (developer-owned) text. Without a scope no
+ * data-cms attributes are emitted at all, which is the correct answer for
+ * non-editable copy — a bogus attribute would point the portal at a field
+ * that does not exist.
+ */
+import Breadcrumbs from '../seo/Breadcrumbs.astro';
+
+interface Crumb {
+  name: string;
+  url?: string;
+}
+interface Props {
+  title: string;
+  subtitle?: string;
+  eyebrow?: string;
+  breadcrumbs?: Crumb[];
+  /** `collection::fieldPrefix` of the copy above, e.g. "pages::about.heading".
+   *  See docs/CMS-BUILDING.md → "переиспользуемые компоненты". */
+  cmsScope?: string;
+}
+const { title, subtitle, eyebrow, breadcrumbs = [], cmsScope } = Astro.props;
+
+/** `undefined` (not `''`) so Astro omits the attribute entirely — an empty
+ *  data-cms would render as a malformed annotation and fail annotations.test. */
+const cms = (field: string) => (cmsScope ? `${cmsScope}.${field}` : undefined);
+---
+<section class="section pb-0">
+  <div class="container-page">
+    {breadcrumbs.length > 1 && <Breadcrumbs items={breadcrumbs} class="mb-6" />}
+    {eyebrow && <p class="eyebrow mb-3" data-cms={cms('eyebrow')}>{eyebrow}</p>}
+    <h1 class="text-4xl font-bold md:text-5xl" data-cms={cms('title')}>{title}</h1>
+    {subtitle && <p class="mt-4 max-w-2xl text-lg text-muted" data-cms={cms('subtitle')}>{subtitle}</p>}
+    <slot />
+  </div>
+</section>

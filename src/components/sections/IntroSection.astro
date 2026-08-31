@@ -1,0 +1,59 @@
+---
+/**
+ * INTRO — two-column "text + image". Good for a value proposition or a short
+ * story with a supporting visual. Reverse column order on wide screens with
+ * the `flip` prop.
+ */
+import { getEntry } from 'astro:content';
+import ContentImage from '../ui/ContentImage.astro';
+import type { ImageSource } from '../../lib/images/resolve';
+
+const T = (await getEntry('sections', 'main'))!.data.intro;
+
+interface Props {
+  eyebrow?: string;
+  title?: string;
+  body?: string;
+  image?: ImageSource;
+  imageAlt?: string;
+  flip?: boolean;
+  /**
+   * Which `collection::field` prefix the data-cms attributes below bind to.
+   * Defaults to the home page's `sections.intro` block. Pass a different
+   * scope (e.g. "pages::about.intro") when reusing this component on another
+   * page with its own copy — see docs/CMS-BUILDING.md "переиспользуемые
+   * компоненты на нескольких страницах".
+   */
+  cmsScope?: string;
+}
+const {
+  eyebrow = T.eyebrow,
+  title = T.title,
+  body = T.body,
+  image = '/images/placeholder.svg',
+  imageAlt = '',
+  flip = false,
+  cmsScope = 'sections::intro',
+} = Astro.props;
+---
+<section class="section">
+  <div class="container-page grid items-center gap-10 md:grid-cols-2 md:gap-14">
+    <div class={flip ? 'md:order-2' : ''}>
+      <p class="eyebrow mb-3" data-cms={`${cmsScope}.eyebrow`}>{eyebrow}</p>
+      <h2 class="text-3xl font-bold md:text-4xl" data-cms={`${cmsScope}.title`}>{title}</h2>
+      <p class="mt-5 text-lg text-muted" data-cms={`${cmsScope}.body`}>{body}</p>
+      <slot />
+    </div>
+    <div class={flip ? 'md:order-1' : ''}>
+      <ContentImage
+        src={image}
+        alt={imageAlt}
+        widths={[480, 800, 1200]}
+        sizes="(min-width: 768px) 50vw, 100vw"
+        width={1200}
+        height={800}
+        class="w-full rounded-xl border border-line object-cover"
+      />
+    </div>
+  </div>
+</section>

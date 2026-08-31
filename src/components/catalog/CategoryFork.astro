@@ -1,0 +1,60 @@
+---
+/**
+ * CategoryFork — two/N-way "pick a material/subcategory" connector, port of
+ * the catalogue reference's `MaterialFork.astro`. Bare grid (no
+ * section/heading wrapper) so the calling page controls layout — see
+ * PricingSection-style card grids for the convention this follows.
+ *
+ * data-cms: компонент — generic-развилка (не знает про коллекции), поэтому
+ * click-to-edit включается снаружи необязательным `cms` у элемента —
+ * префиксом `<collection>:<itemId>` (для подкатегорий каталога —
+ * `categories:<id>`), к которому компонент дописывает `:name`/`:description`.
+ * Без `cms` атрибуты не печатаются вовсе.
+ */
+import ContentImage from '../ui/ContentImage.astro';
+
+interface ForkItem {
+  href: string;
+  title: string;
+  description?: string;
+  image?: string;
+  /** `<collection>:<itemId>`-префикс для data-cms (title = поле `name`). */
+  cms?: string;
+}
+interface Props {
+  items: ForkItem[];
+}
+const { items } = Astro.props;
+---
+<div class="grid gap-6 md:grid-cols-2">
+  {
+    items.map((item) => (
+      <a
+        href={item.href}
+        class="group relative flex min-h-[320px] flex-col justify-end overflow-hidden rounded-2xl text-paper no-underline shadow-sm transition-transform duration-300 hover:-translate-y-1"
+      >
+        <ContentImage
+          src={item.image ?? '/images/placeholder.svg'}
+          alt={item.title}
+          widths={[480, 720, 960]}
+          sizes="(min-width: 768px) 50vw, 100vw"
+          width={960}
+          height={640}
+          class="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+        />
+        <span class="absolute inset-0 bg-gradient-to-t from-ink/85 via-ink/30 to-transparent" aria-hidden="true" />
+        <span class="relative flex flex-col gap-2 p-6">
+          <span class="text-2xl font-bold tracking-tight" data-cms={item.cms ? `${item.cms}:name` : undefined}>{item.title}</span>
+          {item.description && (
+            <span class="max-w-[42ch] text-sm text-paper/80" data-cms={item.cms ? `${item.cms}:description` : undefined}>
+              {item.description}
+            </span>
+          )}
+          <span class="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-accent">
+            Подробнее <span aria-hidden="true" class="transition-transform group-hover:translate-x-1">→</span>
+          </span>
+        </span>
+      </a>
+    ))
+  }
+</div>

@@ -1,0 +1,123 @@
+/**
+ * GET /api/health — единая точка мониторинга проекта.
+ *
+ * Скопируйте в `src/pages/api/health.ts` (без `.example`), когда у проекта
+ * появляются фоновые воркеры (боты-приёмники заявок, обработчики очередей).
+ *
+ * Зачем отдельный роут, если есть главная страница: воркеры слушают только
+ * 127.0.0.1 и наружу не торчат, поэтому внешний монитор их не видит. Этот
+ * роут опрашивает их изнутри и сводит всё в один код ответа:
+ *
+ *   200 — сайт жив и все обязательные воркеры отвечают;
+ *   503 — сайт жив, но воркер лёг (заявки не доедут до менеджеров!).
+ *
+ * Монитору достаточно кода ответа; тело — для человека, который откроет
+ * ссылку руками. Секретов не отдаём: только статусы и счётчики.
+ *
+ * ⚠️ При `trailingSlash: 'always'` (дефолт шаблона) адрес для монитора —
+ * `/api/health/` СО СЛЕШЕМ. Без него будет 301, и монитор посчитает это
+ * недоступностью.
+ *
+ * Внешний мониторинг: UptimeRobot на этот адрес, обязательно с
+ * подтверждением простоя в 2 проверки — иначе алерт придёт на каждый
+ * редеплой. Алерты слать в служебный чат, НЕ в рабочий чат с заявками.
+ */
+import type { APIRoute } from 'astro';
+import { notifyQueuePending, quarantineStats } from '../../lib/lead-server/leads';
+
+export const prerender = false;
+
+interface WorkerProbe {
+  name: string;
+  url: string;
+  /** Воркер без токена (ещё не подключённый канал) не должен ронять статус. */
+  required: boolean;
+}
+
+// Порты — из тех же переменных, что читают сами боты, а НЕ числом в коде.
+// В Freim Deploy общие переменные проекта достаются всем сервисам: сменив
+// порт в панели, с зашитым числом вы получите вечно «упавшего» воркера,
+// который на самом деле жив.
+const TELEGRAM_PORT = process.env.TELEGRAM_NOTIFY_PORT || '8091';
+const MAX_PORT = process.env.MAX_NOTIFY_PORT || '8092';
+
+const WORKERS: WorkerProbe[] = [
+  // { name: 'telegram-bot', url: `http://127.0.0.1:${TELEGRAM_PORT}/health`, required: true },
+  // { name: 'max-bot', url: `http://127.0.0.1:${MAX_PORT}/health`, required: false },
+];
+
+async function probe(w: WorkerProbe): Promise<Record<string, unknown>> {
+  const started = Date.now();
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(w.url, { signal: controller.signal });
+    clearTimeout(timer);
+    const body = (await res.json()) as Record<string, unknown>;
+    return {
+      name: w.name,
+      ok: res.ok && body.ok === true,
+      mode: body.mode ?? null,
+      leads: body.leads ?? null,
+      pending_delivery: body.pending_delivery ?? null,
+      // Очередь недоставленного ВНУТРИ бота. Пробрасываем наружу: сами боты
+      // слушают только loopback, и снаружи это видно единственным способом.
+      outbox_pending: body.outbox_pending ?? null,
+      last_sent_at: body.last_sent_at ?? null,
+      last_error: body.last_error ?? null,
+      response_ms: Date.now() - started,
+    };
+  } catch (err) {
+    return {
+      name: w.name,
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      response_ms: Date.now() - started,
+    };
+  }
+}
+
+export const GET: APIRoute = async () => {
+  const workers = await Promise.all(WORKERS.map(probe));
+  // Очередь повторной отправки: сколько заявок ждёт бота, который их не
+  // принял. Ноль — норма. Не ноль дольше нескольких минут — бот не поднялся.
+  let notifyQueue = 0;
+  try {
+    notifyQueue = notifyQueuePending();
+  } catch {
+    /* каталог данных недоступен — на общий статус это не влияет */
+  }
+  // Карантин honeypot. Всплеск здесь — повод посмотреть глазами: возможно,
+  // ловушка начала ловить живых людей (прецедент был — см. .env.example,
+  // LEAD_QUARANTINE_TTL_DAYS), а не только ботов.
+  let quarantine: { total: number; last24h: number } | null = null;
+  try {
+    quarantine = quarantineStats();
+  } catch {
+    /* каталог данных недоступен — на общий статус это не влияет */
+  }
+  const failedRequired = workers.filter((w, i) => WORKERS[i]!.required && w.ok !== true);
+  const healthy = failedRequired.length === 0;
+
+  return new Response(
+    JSON.stringify(
+      {
+        ok: healthy,
+        checked_at: new Date().toISOString(),
+        workers,
+        notify_queue: notifyQueue,
+        ...(quarantine ? { quarantine } : {}),
+        ...(healthy ? {} : { failed: failedRequired.map((w) => w.name) }),
+      },
+      null,
+      2,
+    ),
+    {
+      status: healthy ? 200 : 503,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    },
+  );
+};

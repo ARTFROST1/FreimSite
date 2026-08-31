@@ -1,0 +1,1488 @@
+{
+  "version": 1,
+  "uploads": {
+    "dir": "src/assets",
+    "valuePrefix": ""
+  },
+  "collections": {
+    "hero": {
+      "kind": "singleton",
+      "label": "Первый экран",
+      "filePath": "src/content/home/hero.json",
+      "singletonKey": "main",
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "badge": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Надпись над заголовком (бейдж)"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Главный заголовок"
+          },
+          "subtitle": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Подзаголовок — одно-два предложения"
+          },
+          "ctaPrimary": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Текст главной кнопки"
+          },
+          "ctaSecondary": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Текст второй кнопки"
+          }
+        },
+        "required": [
+          "badge",
+          "title",
+          "subtitle",
+          "ctaPrimary",
+          "ctaSecondary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "sections": {
+      "kind": "singleton",
+      "label": "Тексты разделов",
+      "filePath": "src/content/home/sections.json",
+      "singletonKey": "main",
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "features": {
+            "type": "object",
+            "properties": {
+              "eyebrow": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Надпись над заголовком"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Заголовок"
+              },
+              "subtitle": {
+                "type": "string",
+                "maxLength": 500,
+                "description": "Подзаголовок"
+              }
+            },
+            "required": [
+              "eyebrow",
+              "title",
+              "subtitle"
+            ],
+            "additionalProperties": false,
+            "description": "Блок «Преимущества»"
+          },
+          "intro": {
+            "type": "object",
+            "properties": {
+              "eyebrow": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Надпись над заголовком"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Заголовок"
+              },
+              "body": {
+                "type": "string",
+                "maxLength": 2000,
+                "description": "Абзац текста"
+              }
+            },
+            "required": [
+              "eyebrow",
+              "title",
+              "body"
+            ],
+            "additionalProperties": false,
+            "description": "Блок «О нас»"
+          },
+          "gallery": {
+            "type": "object",
+            "properties": {
+              "eyebrow": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Надпись над заголовком"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Заголовок"
+              }
+            },
+            "required": [
+              "eyebrow",
+              "title"
+            ],
+            "additionalProperties": false,
+            "description": "Блок «Галерея»"
+          },
+          "reviews": {
+            "type": "object",
+            "properties": {
+              "eyebrow": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Надпись над заголовком"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Заголовок"
+              }
+            },
+            "required": [
+              "eyebrow",
+              "title"
+            ],
+            "additionalProperties": false,
+            "description": "Блок «Отзывы»"
+          },
+          "pricing": {
+            "type": "object",
+            "properties": {
+              "eyebrow": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Надпись над заголовком"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Заголовок"
+              },
+              "subtitle": {
+                "type": "string",
+                "maxLength": 500,
+                "description": "Подзаголовок"
+              }
+            },
+            "required": [
+              "eyebrow",
+              "title",
+              "subtitle"
+            ],
+            "additionalProperties": false,
+            "description": "Блок «Цены»"
+          },
+          "lead": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Заголовок над формой"
+              },
+              "subtitle": {
+                "type": "string",
+                "maxLength": 500,
+                "description": "Одна строка подводки — между заголовком и телефоном"
+              },
+              "submitLabel": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Текст кнопки формы"
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 500,
+                "description": "Микрокопия под кнопкой (снимает страх звонка)"
+              }
+            },
+            "required": [
+              "title",
+              "subtitle",
+              "submitLabel",
+              "note"
+            ],
+            "additionalProperties": false,
+            "description": "Блок «Заявка» — главная форма страницы"
+          },
+          "map": {
+            "type": "object",
+            "properties": {
+              "eyebrow": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Надпись над заголовком"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Заголовок"
+              }
+            },
+            "required": [
+              "eyebrow",
+              "title"
+            ],
+            "additionalProperties": false,
+            "description": "Блок «Карта и адрес»"
+          },
+          "cta": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Заголовок"
+              },
+              "subtitle": {
+                "type": "string",
+                "maxLength": 500,
+                "description": "Подзаголовок"
+              }
+            },
+            "required": [
+              "title",
+              "subtitle"
+            ],
+            "additionalProperties": false,
+            "description": "Финальный призыв к действию"
+          },
+          "faq": {
+            "type": "object",
+            "properties": {
+              "eyebrow": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Надпись над заголовком"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Заголовок"
+              }
+            },
+            "required": [
+              "eyebrow",
+              "title"
+            ],
+            "additionalProperties": false,
+            "description": "Блок «Вопросы и ответы»"
+          },
+          "team": {
+            "type": "object",
+            "properties": {
+              "eyebrow": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Надпись над заголовком"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Заголовок"
+              },
+              "subtitle": {
+                "type": "string",
+                "maxLength": 500,
+                "description": "Подзаголовок"
+              }
+            },
+            "required": [
+              "eyebrow",
+              "title",
+              "subtitle"
+            ],
+            "additionalProperties": false,
+            "description": "Блок «Команда»"
+          },
+          "stats": {
+            "type": "object",
+            "properties": {
+              "eyebrow": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Надпись над заголовком"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Заголовок"
+              }
+            },
+            "required": [
+              "eyebrow",
+              "title"
+            ],
+            "additionalProperties": false,
+            "description": "Блок «Цифры»"
+          },
+          "partners": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Заголовок"
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "additionalProperties": false,
+            "description": "Блок «Нам доверяют» (логотипы партнёров)"
+          },
+          "timeline": {
+            "type": "object",
+            "properties": {
+              "eyebrow": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Надпись над заголовком"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Заголовок"
+              }
+            },
+            "required": [
+              "eyebrow",
+              "title"
+            ],
+            "additionalProperties": false,
+            "description": "Блок «История компании»"
+          }
+        },
+        "required": [
+          "features",
+          "intro",
+          "gallery",
+          "reviews",
+          "pricing",
+          "lead",
+          "map",
+          "cta",
+          "faq",
+          "team",
+          "stats",
+          "partners",
+          "timeline"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "features": {
+      "kind": "array",
+      "label": "Преимущества",
+      "filePath": "src/content/home/features.json",
+      "maxItems": 12,
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "icon": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Иконка (SVG-путь 24×24 или один эмодзи)"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Заголовок преимущества"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Пояснение в одно-два предложения"
+          }
+        },
+        "required": [
+          "id",
+          "icon",
+          "title",
+          "description"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "reviews": {
+      "kind": "array",
+      "label": "Отзывы",
+      "filePath": "src/content/home/reviews.json",
+      "maxItems": 50,
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "author": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Имя автора отзыва"
+          },
+          "rating": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Оценка 1–5; звёзды обновятся после публикации"
+          },
+          "date": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Дата отзыва (ГГГГ-ММ-ДД)"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Текст отзыва"
+          }
+        },
+        "required": [
+          "id",
+          "author",
+          "rating",
+          "date",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pricing": {
+      "kind": "array",
+      "label": "Тарифы",
+      "filePath": "src/content/home/pricing.json",
+      "maxItems": 12,
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Название тарифа"
+          },
+          "price": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Цена (можно текстом, напр. \"от 10 000 ₽\")"
+          },
+          "period": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Период оплаты, напр. \"в месяц\""
+          },
+          "featured": {
+            "default": false,
+            "description": "Выделить как рекомендуемый тариф",
+            "type": "boolean"
+          },
+          "features": {
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "description": "Список пунктов тарифа"
+          },
+          "cta": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Текст кнопки"
+              },
+              "href": {
+                "type": "string",
+                "maxLength": 300,
+                "description": "Ссылка кнопки"
+              }
+            },
+            "required": [
+              "label",
+              "href"
+            ],
+            "additionalProperties": false,
+            "description": "Кнопка призыва к действию"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "price",
+          "features",
+          "cta"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "faq": {
+      "kind": "array",
+      "label": "Вопросы и ответы",
+      "filePath": "src/content/home/faq.json",
+      "maxItems": 50,
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "question": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Вопрос"
+          },
+          "answer": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Ответ"
+          }
+        },
+        "required": [
+          "id",
+          "question",
+          "answer"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "rating": {
+      "kind": "singleton",
+      "label": "Рейтинг",
+      "filePath": "src/content/home/rating.json",
+      "singletonKey": "aggregate",
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5,
+            "description": "Средняя оценка (0–5)"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Количество отзывов (0 скрывает блок рейтинга)"
+          }
+        },
+        "required": [
+          "value",
+          "count"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "showcase": {
+      "kind": "array",
+      "label": "Витрина (блок на главной)",
+      "filePath": "src/content/home/showcase.json",
+      "maxItems": 24,
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Заголовок карточки"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Текст карточки"
+          },
+          "image": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "Картинка слайда (загрузите файл; можно указать /images/… из public)",
+            "format": "image"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "image"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "team": {
+      "kind": "array",
+      "label": "Команда",
+      "filePath": "src/content/home/team.json",
+      "maxItems": 24,
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Имя и фамилия"
+          },
+          "role": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Должность / роль в команде"
+          },
+          "bio": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Пара слов о человеке (необязательно)"
+          },
+          "photo": {
+            "description": "Фото (необязательно; без фото — нейтральный силуэт)",
+            "format": "image",
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "stats": {
+      "kind": "array",
+      "label": "Цифры (факты о компании)",
+      "filePath": "src/content/home/stats.json",
+      "maxItems": 8,
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Число (напр. 1200 — анимируется счётчиком; можно текстом, напр. 24/7)"
+          },
+          "suffix": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Знак после числа, напр. \"+\", \"%\", \" лет\" (необязательно)"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Подпись под числом"
+          }
+        },
+        "required": [
+          "id",
+          "value",
+          "label"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "partners": {
+      "kind": "array",
+      "label": "Партнёры («Нам доверяют»)",
+      "filePath": "src/content/home/partners.json",
+      "maxItems": 30,
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Название компании"
+          },
+          "logo": {
+            "description": "Логотип (необязательно; без файла — текстовая плашка с названием)",
+            "format": "image",
+            "type": "string",
+            "maxLength": 300
+          },
+          "href": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "Ссылка на сайт партнёра (необязательно)"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "timeline": {
+      "kind": "array",
+      "label": "История компании (этапы)",
+      "filePath": "src/content/home/timeline.json",
+      "maxItems": 20,
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "date": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Дата/метка этапа, напр. \"2019\" или \"Май 2021\""
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Заголовок этапа"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Что произошло — одно-два предложения"
+          }
+        },
+        "required": [
+          "id",
+          "date",
+          "title",
+          "description"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "navigation": {
+      "kind": "singleton",
+      "label": "Навигация (шапка сайта)",
+      "filePath": "src/content/nav/navigation.json",
+      "singletonKey": "main",
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Номер телефона для отображения (шапка, футер, карта, контакты)"
+          },
+          "ctaLabel": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Текст кнопки «Оставить заявку» в шапке и мобильном меню"
+          },
+          "menu": {
+            "type": "object",
+            "properties": {
+              "about": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Пункт меню «О нас»"
+              },
+              "services": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Пункт меню «Услуги»"
+              },
+              "gallery": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Пункт меню «Галерея»"
+              },
+              "catalog": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Пункт меню «Каталог»"
+              },
+              "blog": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Пункт меню «Блог»"
+              },
+              "contacts": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Пункт меню «Контакты»"
+              }
+            },
+            "required": [
+              "about",
+              "services",
+              "gallery",
+              "catalog",
+              "blog",
+              "contacts"
+            ],
+            "additionalProperties": false,
+            "description": "Подписи пунктов главного меню (ссылки менять нельзя — только текст)"
+          }
+        },
+        "required": [
+          "phone",
+          "ctaLabel",
+          "menu"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "footer": {
+      "kind": "singleton",
+      "label": "Подвал сайта (футер)",
+      "filePath": "src/content/nav/footer.json",
+      "singletonKey": "main",
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "columns": {
+            "type": "object",
+            "properties": {
+              "sections": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "description": "Заголовок колонки «Разделы»"
+                  },
+                  "links": {
+                    "type": "object",
+                    "properties": {
+                      "home": {
+                        "type": "string",
+                        "maxLength": 120,
+                        "description": "Текст ссылки «Главная» (футер)"
+                      },
+                      "about": {
+                        "type": "string",
+                        "maxLength": 120,
+                        "description": "Текст ссылки «О нас» (футер)"
+                      },
+                      "gallery": {
+                        "type": "string",
+                        "maxLength": 120,
+                        "description": "Текст ссылки «Галерея» (футер)"
+                      },
+                      "blog": {
+                        "type": "string",
+                        "maxLength": 120,
+                        "description": "Текст ссылки «Блог» (футер)"
+                      },
+                      "contacts": {
+                        "type": "string",
+                        "maxLength": 120,
+                        "description": "Текст ссылки «Контакты» (футер)"
+                      }
+                    },
+                    "required": [
+                      "home",
+                      "about",
+                      "gallery",
+                      "blog",
+                      "contacts"
+                    ],
+                    "additionalProperties": false,
+                    "description": "Подписи ссылок колонки «Разделы»"
+                  }
+                },
+                "required": [
+                  "title",
+                  "links"
+                ],
+                "additionalProperties": false,
+                "description": "Колонка «Разделы»"
+              },
+              "legal": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "description": "Заголовок колонки «Правовое»"
+                  },
+                  "links": {
+                    "type": "object",
+                    "properties": {
+                      "privacy": {
+                        "type": "string",
+                        "maxLength": 120,
+                        "description": "Текст ссылки «Политика конфиденциальности»"
+                      },
+                      "consent": {
+                        "type": "string",
+                        "maxLength": 120,
+                        "description": "Текст ссылки «Согласие на обработку данных»"
+                      },
+                      "terms": {
+                        "type": "string",
+                        "maxLength": 120,
+                        "description": "Текст ссылки «Пользовательское соглашение»"
+                      }
+                    },
+                    "required": [
+                      "privacy",
+                      "consent",
+                      "terms"
+                    ],
+                    "additionalProperties": false,
+                    "description": "Подписи ссылок колонки «Правовое»"
+                  }
+                },
+                "required": [
+                  "title",
+                  "links"
+                ],
+                "additionalProperties": false,
+                "description": "Колонка «Правовое»"
+              }
+            },
+            "required": [
+              "sections",
+              "legal"
+            ],
+            "additionalProperties": false
+          },
+          "copyrightSuffix": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Текст после «© {год} {юрлицо}» в нижней строке футера"
+          }
+        },
+        "required": [
+          "columns",
+          "copyrightSuffix"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "address": {
+      "kind": "singleton",
+      "label": "Адрес",
+      "filePath": "src/content/nav/address.json",
+      "singletonKey": "main",
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "full": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Полный адрес одной строкой (футер, карта, страница контактов)"
+          }
+        },
+        "required": [
+          "full"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pages": {
+      "kind": "singleton",
+      "label": "Тексты страниц (о нас / контакты / галерея)",
+      "filePath": "src/content/pages/pages.json",
+      "singletonKey": "main",
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "about": {
+            "type": "object",
+            "properties": {
+              "heading": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Заголовок H1"
+                  },
+                  "subtitle": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": "Вводный абзац под заголовком"
+                  }
+                },
+                "required": [
+                  "title",
+                  "subtitle"
+                ],
+                "additionalProperties": false
+              },
+              "intro": {
+                "type": "object",
+                "properties": {
+                  "eyebrow": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "description": "Надпись над заголовком"
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Заголовок блока истории компании"
+                  },
+                  "body": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": "Текст истории компании"
+                  }
+                },
+                "required": [
+                  "eyebrow",
+                  "title",
+                  "body"
+                ],
+                "additionalProperties": false
+              },
+              "values": {
+                "type": "object",
+                "properties": {
+                  "eyebrow": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "description": "Надпись над заголовком"
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Заголовок блока ценностей"
+                  },
+                  "subtitle": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "Подзаголовок блока ценностей"
+                  }
+                },
+                "required": [
+                  "eyebrow",
+                  "title",
+                  "subtitle"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "heading",
+              "intro",
+              "values"
+            ],
+            "additionalProperties": false,
+            "description": "Страница «О нас»"
+          },
+          "contacts": {
+            "type": "object",
+            "properties": {
+              "heading": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Заголовок H1"
+                  },
+                  "subtitle": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": "Вводный абзац под заголовком"
+                  }
+                },
+                "required": [
+                  "title",
+                  "subtitle"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "heading"
+            ],
+            "additionalProperties": false,
+            "description": "Страница «Контакты»"
+          },
+          "gallery": {
+            "type": "object",
+            "properties": {
+              "heading": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Заголовок H1"
+                  },
+                  "subtitle": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": "Вводный абзац под заголовком"
+                  }
+                },
+                "required": [
+                  "title",
+                  "subtitle"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "heading"
+            ],
+            "additionalProperties": false,
+            "description": "Страница «Галерея»"
+          }
+        },
+        "required": [
+          "about",
+          "contacts",
+          "gallery"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "legal": {
+      "kind": "singleton",
+      "label": "Реквизиты в правовых документах",
+      "filePath": "src/content/legal/legal.json",
+      "singletonKey": "main",
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "operator": {
+            "type": "object",
+            "properties": {
+              "fullName": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "ФИО предпринимателя полностью (как в ЕГРИП)"
+              },
+              "inn": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "ИНН"
+              },
+              "ogrnip": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "ОГРНИП"
+              },
+              "registrationAddress": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Адрес регистрации по ЕГРИП"
+              }
+            },
+            "required": [
+              "fullName",
+              "inn",
+              "ogrnip",
+              "registrationAddress"
+            ],
+            "additionalProperties": false,
+            "description": "Блок «Реквизиты оператора персональных данных»"
+          },
+          "responsible": {
+            "type": "object",
+            "properties": {
+              "fullName": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "ФИО ответственного за обработку персональных данных"
+              }
+            },
+            "required": [
+              "fullName"
+            ],
+            "additionalProperties": false,
+            "description": "Блок «Ответственный за обработку данных» (статья 22.1 152-ФЗ)"
+          },
+          "dates": {
+            "type": "object",
+            "properties": {
+              "privacy": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Дата редакции Политики конфиденциальности (без «г.» на конце)"
+              },
+              "consent": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Дата редакции Согласия на обработку данных (без «г.» на конце)"
+              },
+              "terms": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Дата редакции Пользовательского соглашения (без «г.» на конце)"
+              }
+            },
+            "required": [
+              "privacy",
+              "consent",
+              "terms"
+            ],
+            "additionalProperties": false,
+            "description": "Блок «Даты редакций документов»"
+          },
+          "rkn": {
+            "type": "object",
+            "properties": {
+              "notificationNumber": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Номер уведомления в реестре операторов Роскомнадзора (пусто — строка не показывается)"
+              },
+              "notificationDate": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Дата подачи уведомления в Роскомнадзор (пусто — строка не показывается)"
+              }
+            },
+            "required": [
+              "notificationNumber",
+              "notificationDate"
+            ],
+            "additionalProperties": false,
+            "description": "Блок «Уведомление Роскомнадзора»"
+          }
+        },
+        "required": [
+          "operator",
+          "responsible",
+          "dates",
+          "rkn"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "categories": {
+      "kind": "array",
+      "label": "Категории каталога",
+      "filePath": "src/content/catalog/categories.json",
+      "maxItems": 40,
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z0-9-]{1,64}$",
+            "description": "Идентификатор (латиница, без пробелов; менять нельзя)"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Название категории"
+          },
+          "description": {
+            "description": "Короткое описание для карточки",
+            "type": "string",
+            "maxLength": 200
+          },
+          "image": {
+            "format": "image",
+            "description": "Картинка категории",
+            "type": "string",
+            "maxLength": 300
+          },
+          "parent": {
+            "format": "ref:categories",
+            "description": "Родительская категория (пусто = верхний уровень)",
+            "type": "string",
+            "maxLength": 64
+          },
+          "priority": {
+            "default": 0,
+            "description": "Порядок (больше — выше)",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "entries": {
+    "products": {
+      "label": "Каталог товаров",
+      "dir": "src/content/products",
+      "ext": ".md",
+      "routeBase": "/katalog",
+      "body": {
+        "enabled": true,
+        "format": "markdown",
+        "label": "Подробное описание (необязательно)"
+      },
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "Название товара"
+          },
+          "category": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "format": "ref:categories",
+            "description": "Категория (лист дерева)"
+          },
+          "shortDescription": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Краткое описание для карточки"
+          },
+          "image": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "format": "image",
+            "description": "Обложка"
+          },
+          "slider": {
+            "default": [],
+            "description": "Слайдер: фото товара (верх карточки)",
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 300,
+              "format": "image"
+            }
+          },
+          "gallery": {
+            "default": [],
+            "description": "Галерея: остальные фото (нижняя секция карточки)",
+            "maxItems": 30,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 300,
+              "format": "image"
+            }
+          },
+          "price": {
+            "description": "Цена (свободный формат, напр. «от 12 500 ₽»)",
+            "type": "string",
+            "maxLength": 40
+          },
+          "features": {
+            "default": [],
+            "description": "Особенности (по строке)",
+            "maxItems": 12,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          "brands": {
+            "default": [],
+            "description": "Бренды/производители",
+            "maxItems": 8,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 40
+            }
+          },
+          "isHit": {
+            "default": false,
+            "description": "Пометить как «Хит»",
+            "type": "boolean"
+          },
+          "isNew": {
+            "default": false,
+            "description": "Пометить как «Новинка»",
+            "type": "boolean"
+          },
+          "priority": {
+            "default": 0,
+            "description": "Порядок в сетке (больше — выше)",
+            "type": "number"
+          },
+          "draft": {
+            "default": false,
+            "description": "Черновик (не показывать на сайте)",
+            "type": "boolean"
+          },
+          "metaTitle": {
+            "description": "SEO-заголовок (title)",
+            "type": "string",
+            "maxLength": 70
+          },
+          "metaDescription": {
+            "description": "SEO-описание (description)",
+            "type": "string",
+            "maxLength": 160
+          }
+        },
+        "required": [
+          "title",
+          "category",
+          "shortDescription",
+          "image"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

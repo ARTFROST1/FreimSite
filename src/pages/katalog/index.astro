@@ -1,0 +1,45 @@
+---
+/**
+ * Каталог — корневая страница: сетка верхнеуровневых категорий
+ * (см. src/lib/catalog.ts sortCategories для порядка).
+ */
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Breadcrumbs from '../../components/seo/Breadcrumbs.astro';
+import ItemListJsonLd from '../../components/seo/ItemListJsonLd.astro';
+import CategoryCard from '../../components/catalog/CategoryCard.astro';
+import { sortCategories } from '../../lib/catalog';
+import { SEO } from '../../config/seo';
+
+const seo = SEO.catalog;
+const crumbs = [{ name: 'Главная', url: '/' }, { name: 'Каталог' }];
+
+const allCategories = (await getCollection('categories')).map((e) => e.data);
+const roots = sortCategories(allCategories.filter((c) => !c.parent));
+---
+<BaseLayout title={seo.title} description={seo.description} ogImage={seo.ogImage} breadcrumbs={crumbs}>
+  <ItemListJsonLd
+    slot="head"
+    items={roots.map((c) => ({ name: c.name, url: `/katalog/${c.id}/` }))}
+  />
+
+  <main class="section">
+    <div class="container-page">
+      <Breadcrumbs items={crumbs} class="mb-6" />
+      <h1 class="text-4xl font-bold md:text-5xl">Каталог</h1>
+      <p class="mt-4 max-w-2xl text-muted">Выберите категорию, чтобы посмотреть товары.</p>
+
+      {
+        roots.length === 0 ? (
+          <p class="mt-10 text-muted">Каталог пока пуст.</p>
+        ) : (
+          <div class="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {roots.map((category) => (
+              <CategoryCard category={category} href={`/katalog/${category.id}/`} />
+            ))}
+          </div>
+        )
+      }
+    </div>
+  </main>
+</BaseLayout>

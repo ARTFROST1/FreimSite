@@ -1,0 +1,594 @@
+---
+/**
+ * LeadAttachments — прикрепление файлов к заявке: скрепка + drag&drop.
+ *
+ * Кладётся ВНУТРЬ `<form data-lead-form>` (см. LeadForm.astro, проп
+ * `allowFiles`). Собственной отправки у компонента нет: он держит настоящий
+ * `<input type="file" multiple>` и переписывает его `files` через
+ * `DataTransfer`, а движок формы (`lib/lead-form.ts`) сам видит непустой
+ * file-input и переключает запрос с JSON на `multipart/form-data`. Поэтому
+ * сервер получает ИМЕННО отфильтрованный набор, а не то, что посетитель
+ * когда-то ткнул в диалоге выбора.
+ *
+ * Лимиты (5 файлов × 5 МБ) и логика отбора живут в `lib/lead-attachments.ts` —
+ * общем модуле с сервером (`lead-server/leads.ts`). Тип файлов НЕ ограничен
+ * намеренно: см. doc-comment там.
+ *
+ * СЛОТ. Пустой слот — самостоятельная зона сброса с надписью-кнопкой. Если
+ * положить в слот поле комментария, зона сброса ляжет оверлеем поверх него, а
+ * скрепка сядет в его правый нижний угол (шаблон «комментарий со скрепкой»):
+ *
+ *   <LeadAttachments>
+ *     <textarea name="message" placeholder="Опишите задачу"></textarea>
+ *   </LeadAttachments>
+ *
+ * Оверлей проявляется, только когда над страницей ДЕЙСТВИТЕЛЬНО тащат файлы
+ * (`dataTransfer.types` содержит 'Files') — иначе он всплывал бы при
+ * перетаскивании выделенного текста и мешал бы читать плейсхолдер.
+ */
+import { MAX_FILES, MAX_FILE_SIZE_LABEL } from '../../lib/lead-attachments';
+
+interface Props {
+  /** Имя поля в multipart-теле. Сервер (`saveAttachments`) ждёт `attachments`. */
+  name?: string;
+  /** Подсказка под зоной: ЧТО полезно приложить именно в этом проекте. */
+  note?: string;
+  /** Надпись на зоне сброса, когда слот пуст. */
+  label?: string;
+  /**
+   * Уникальный id file-input'а: нужен, когда на странице несколько форм с
+   * вложениями — дубли id ломают и разметку, и `document.getElementById`.
+   * Связывать его с внешним `<label>` НЕ надо: поле намеренно `aria-hidden`
+   * и вне таб-порядка, а доступное имя несёт кнопка-скрепка (`aria-label` с
+   * лимитами). Так у ассистивных технологий остаётся ровно один интерактивный
+   * элемент вместо пары «мёртвая метка + невидимое поле».
+   */
+  id?: string;
+}
+
+const {
+  name = 'attachments',
+  note = `Фото, скан или документ — что угодно, до ${MAX_FILES} файлов по ${MAX_FILE_SIZE_LABEL}.`,
+  label = 'Прикрепить файлы',
+  id = 'lead-attachments',
+} = Astro.props;
+
+/** Со слотом компонент — оверлей поверх чужого поля, без слота — сам себе поле. */
+const hasField = Astro.slots.has('default');
+const attachHint = `${label}: до ${MAX_FILES} файлов по ${MAX_FILE_SIZE_LABEL}, любой формат`;
+---
+
+<div class="lead-attach" data-lead-attach>
+  <div class:list={['lead-attach-zone', hasField ? 'has-field' : 'bare']} data-attach-zone>
+    {hasField && <slot />}
+
+    <button
+      type="button"
+      data-attach-btn
+      aria-label={attachHint}
+      class:list={['lead-attach-btn', hasField ? 'corner' : 'full']}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m20.4 11.2-8 8a5.1 5.1 0 0 1-7.2-7.2l8.5-8.5a3.4 3.4 0 0 1 4.8 4.8l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" />
+      </svg>
+      {!hasField && <span>{label}</span>}
+    </button>
+
+    <!-- Оверлей зоны сброса: класс `dnd-armed` вешает скрипт, как только над
+         окном потащили файлы, `drag` — когда курсор уже над этой зоной. -->
+    <div class="lead-attach-drop" aria-hidden="true">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 16V4m0 0L8 8m4-4 4 4" />
+        <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+      </svg>
+      <span>Перетащите файлы сюда</span>
+    </div>
+  </div>
+
+  {note && <p class="lead-attach-note">{note}</p>}
+
+  <!-- Список выбранного И причины отказов. aria-live="polite" — отклонённый
+       файл должен быть не только виден, но и озвучен: молчаливая пропажа
+       вложения обнаруживается уже в разговоре с менеджером. -->
+  <div class="lead-attach-list" data-attach-list aria-live="polite"></div>
+
+  <!-- Настоящее поле формы. Скрыто от глаз и от табов (роль кнопки играет
+       .lead-attach-btn), но остаётся в форме — его `files` читает lead-form.ts. -->
+  <input
+    type="file"
+    id={id}
+    name={name}
+    multiple
+    class="sr-only"
+    tabindex="-1"
+    aria-hidden="true"
+    data-attach-input
+  />
+</div>
+
+<style>
+  .lead-attach {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .lead-attach-zone {
+    position: relative;
+  }
+  /* Со слотом: место под угловую скрепку, чтобы она не легла на текст. */
+  .lead-attach-zone.has-field :global(textarea) {
+    display: block;
+    padding-right: 58px;
+  }
+
+  /* ── Оверлей зоны сброса ─────────────────────────────────────────────── */
+  .lead-attach-drop {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px;
+    border-radius: var(--radius-md);
+    border: 2px dashed color-mix(in srgb, var(--color-accent) 55%, transparent);
+    /* Непрозрачный фон: подсказка перекрывает содержимое, а не мешается с ним. */
+    background: var(--color-surface);
+    color: var(--color-accent);
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: center;
+  }
+  .lead-attach-zone.dnd-armed .lead-attach-drop {
+    display: flex;
+  }
+  .lead-attach-zone.drag .lead-attach-drop {
+    border-style: solid;
+    border-color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+  }
+  .lead-attach-drop svg {
+    width: 26px;
+    height: 26px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* ── Кнопка-скрепка ──────────────────────────────────────────────────── */
+  .lead-attach-btn {
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    color: var(--color-muted);
+    transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+  }
+  .lead-attach-btn svg {
+    width: 19px;
+    height: 19px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .lead-attach-btn:hover {
+    color: var(--color-accent);
+  }
+  /* Со слотом — круглая скрепка в углу поля. */
+  .lead-attach-btn.corner {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    width: 44px;
+    height: 44px;
+    border-radius: 999px;
+    background: var(--color-surface);
+  }
+  .lead-attach-btn.corner:hover {
+    background: var(--color-accent);
+    color: var(--color-accent-ink);
+  }
+  /* Без слота — сама зона и есть кнопка. */
+  .lead-attach-btn.full {
+    grid-auto-flow: column;
+    gap: 8px;
+    width: 100%;
+    padding: 14px 16px;
+    border: 1px dashed var(--color-line);
+    border-radius: var(--radius-md);
+    background: transparent;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .lead-attach-btn.full:hover {
+    border-color: var(--color-accent);
+  }
+
+  .lead-attach-note {
+    margin: 0;
+    font-size: 12px;
+    color: var(--color-muted);
+  }
+
+  /* ── Плитки выбранных файлов ─────────────────────────────────────────── */
+  .lead-attach-list {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 2px;
+  }
+  .lead-attach-list:empty {
+    display: none;
+  }
+  @media (max-width: 560px) {
+    .lead-attach-list {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  /* ВНИМАНИЕ: содержимое `.lead-attach-list` рисует скрипт, а Astro скоупит
+     стили по разметке — на созданные в рантайме узлы `data-astro-cid-*` не
+     попадает, и без `:global()` правила ниже молча не применились бы. Сам
+     `.lead-attach-list` в разметке есть, поэтому он остаётся скоупленным и
+     ограничивает область действия global-части. */
+  .lead-attach-list :global(.file-card) {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .lead-attach-list :global(.file-thumb) {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 100%;
+    aspect-ratio: 1;
+    overflow: hidden;
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    color: var(--color-muted);
+  }
+  .lead-attach-list :global(.file-thumb img) {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .lead-attach-list :global(.file-glyph) {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 6px;
+  }
+  .lead-attach-list :global(.file-glyph svg) {
+    width: 26px;
+    height: 26px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .lead-attach-list :global(.file-ext) {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lead-attach-list :global(.file-name) {
+    width: 100%;
+    font-size: 11px;
+    line-height: 1.25;
+    text-align: center;
+    color: var(--color-muted);
+    /* Длинное имя — две строки с многоточием, высота плиток не пляшет. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+  .lead-attach-list :global(.file-x) {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-paper) 88%, transparent);
+    color: var(--color-ink);
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+  .lead-attach-list :global(.file-x:hover) {
+    background: var(--color-danger);
+    color: var(--color-paper);
+  }
+  /* Причина отказа: во всю ширину сетки — читается как строка, а не как ещё
+     одна плитка файла. Живёт в aria-live-контейнере, поэтому отдельный
+     role="alert" не нужен. */
+  .lead-attach-list :global(.file-note) {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    padding: 5px 13px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+    color: var(--color-danger);
+    font-size: 12.5px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lead-attach-btn,
+    .lead-attach-list :global(.file-x) {
+      transition: none;
+    }
+  }
+</style>
+
+<script>
+  import { addAttachments, attachmentExt } from '../../lib/lead-attachments';
+
+  /** Иконка не-картинки: лист с загнутым углом. Разметка СТАТИЧЕСКАЯ — данные
+   *  файла (имя, расширение) попадают в DOM только через textContent. */
+  const DOC_GLYPH =
+    '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+    '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>' +
+    '<path d="M14 3v5h5"/></svg>';
+
+  /** Тащат ли над страницей именно ФАЙЛЫ (а не выделенный текст/ссылку). */
+  function hasFiles(event: DragEvent): boolean {
+    return Array.from(event.dataTransfer?.types ?? []).includes('Files');
+  }
+
+  function initOne(root: HTMLElement): void {
+    if (root.dataset.attachReady === '1') return;
+    root.dataset.attachReady = '1';
+
+    const input = root.querySelector<HTMLInputElement>('[data-attach-input]');
+    const zone = root.querySelector<HTMLElement>('[data-attach-zone]');
+    const button = root.querySelector<HTMLElement>('[data-attach-btn]');
+    const list = root.querySelector<HTMLElement>('[data-attach-list]');
+    if (!input || !zone || !list) return;
+
+    /** Метка формы-хозяйки — чтобы чужой успех не обнулял наш набор (см. ниже). */
+    const ownSource =
+      root.closest<HTMLFormElement>('form[data-lead-form]')?.dataset.leadSource ?? '';
+
+    let picked: File[] = [];
+    let rejected: string[] = [];
+    /** Object-URL превью живут ровно столько, сколько плитка на экране: каждый
+     *  render() отзывает прошлую пачку. Без этого пять картинок по 5 МБ висят
+     *  в памяти вкладки до перезагрузки. */
+    let previewUrls: string[] = [];
+
+    /** Переписываем настоящий file-input отфильтрованным набором — именно его
+     *  читает lead-form.ts, собирая multipart. */
+    function syncInput(): void {
+      const dt = new DataTransfer();
+      picked.forEach((file) => dt.items.add(file));
+      input!.files = dt.files;
+    }
+
+    function buildThumb(file: File): HTMLElement {
+      const thumb = document.createElement('div');
+      thumb.className = 'file-thumb';
+
+      const glyph = document.createElement('span');
+      glyph.className = 'file-glyph';
+      glyph.innerHTML = DOC_GLYPH; // статическая разметка, без данных файла
+      const ext = document.createElement('span');
+      ext.className = 'file-ext';
+      ext.textContent = attachmentExt(file.name);
+      glyph.appendChild(ext);
+      thumb.appendChild(glyph);
+
+      // Настоящее превью — только для картинок, и то не для всех: .heic с
+      // айфона Chrome не рисует. Тогда onerror убирает <img>, а иконка,
+      // которая уже лежит в плитке, остаётся.
+      if (file.type.startsWith('image/')) {
+        const url = URL.createObjectURL(file);
+        previewUrls.push(url);
+        const img = document.createElement('img');
+        img.alt = '';
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.addEventListener('load', () => glyph.remove());
+        img.addEventListener('error', () => img.remove());
+        img.src = url;
+        thumb.appendChild(img);
+      }
+      return thumb;
+    }
+
+    function render(): void {
+      previewUrls.forEach((url) => URL.revokeObjectURL(url));
+      previewUrls = [];
+      list!.textContent = '';
+
+      picked.forEach((file, index) => {
+        const card = document.createElement('div');
+        card.className = 'file-card';
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'file-x';
+        remove.setAttribute('aria-label', `Убрать файл ${file.name}`);
+        remove.textContent = '✕';
+        remove.addEventListener('click', () => {
+          picked.splice(index, 1);
+          rejected = []; // новое действие с файлами — прошлые отказы неактуальны
+          syncInput();
+          render();
+        });
+
+        const name = document.createElement('span');
+        name.className = 'file-name';
+        name.textContent = file.name;
+        name.title = file.name;
+
+        card.append(remove, buildThumb(file), name);
+        list!.appendChild(card);
+      });
+
+      rejected.forEach((message) => {
+        const note = document.createElement('span');
+        note.className = 'file-note';
+        note.textContent = message;
+        list!.appendChild(note);
+      });
+    }
+
+    function add(incoming: FileList | File[]): void {
+      const result = addAttachments(picked, Array.from(incoming));
+      picked = result.files;
+      rejected = result.rejected;
+      syncInput();
+      render();
+    }
+
+    button?.addEventListener('click', () => input!.click());
+    input.addEventListener('change', () => {
+      // Содержимое input'а тут же перезаписывается через syncInput(), поэтому
+      // повторный выбор того же файла отработает штатно (change сработает —
+      // значение поля мы уже сменили).
+      add(input!.files || []);
+    });
+
+    // Зона: подсветка при наведении и сам drop.
+    ['dragenter', 'dragover'].forEach((type) => {
+      zone.addEventListener(type, (event) => {
+        const drag = event as DragEvent;
+        if (!hasFiles(drag)) return;
+        drag.preventDefault();
+        if (drag.dataTransfer) drag.dataTransfer.dropEffect = 'copy';
+        zone.classList.add('drag');
+      });
+    });
+    zone.addEventListener('dragleave', (event) => {
+      const drag = event as DragEvent;
+      if (!zone.contains(drag.relatedTarget as Node)) zone.classList.remove('drag');
+    });
+    zone.addEventListener('drop', (event) => {
+      event.preventDefault();
+      zone.classList.remove('drag', 'dnd-armed');
+      const drag = event as DragEvent;
+      if (drag.dataTransfer?.files) add(drag.dataTransfer.files);
+    });
+
+    /**
+     * Заявка ушла — форма прячется, но блобы превью останутся в памяти, если
+     * их не отпустить руками.
+     *
+     * Событие всплывает на document, поэтому обработчик слышит успех ЛЮБОЙ
+     * формы на странице, и два случая надо держать врозь.
+     *
+     * 1. Экземпляр отсоединён от документа (SPA-навигация): его никто уже не
+     *    увидит, но замыкание держит `picked` и мёртвые object-URL — если
+     *    просто выйти, до 25 МБ превью не освободятся НИКОГДА. Отзываем блобы
+     *    и снимаем листенер: восстанавливать его некому и незачем (новый
+     *    экземпляр вешает собственный в initOne).
+     *
+     * 2. Экземпляр живой: СНАЧАЛА фильтр по `source` — иначе успех соседней
+     *    формы (например, попапа) порвал бы blob-URL наших превью, оставив
+     *    битые картинки при нетронутых `picked` и `input.files`. Свой набор
+     *    чистит только свой успех, а отзыв блобов делает `render()` внутри
+     *    сброса — отдельный вызов здесь был бы лишним.
+     *
+     * `detail.source` кладёт lead-form.ts, сверяем с `data-lead-source` СВОЕЙ
+     * формы. Компонент вне формы (или событие без source) реагирует на любой
+     * успех — для одиночной формы это верное поведение.
+     */
+    function onLeadSuccess(event: Event): void {
+      if (!root.isConnected) {
+        previewUrls.forEach((url) => URL.revokeObjectURL(url));
+        previewUrls = [];
+        document.removeEventListener('app:lead-success', onLeadSuccess);
+        return;
+      }
+      const detail = (event as CustomEvent<{ source?: string }>).detail;
+      if (ownSource && detail?.source && detail.source !== ownSource) return;
+      picked = [];
+      rejected = [];
+      syncInput();
+      render(); // сам отзовёт previewUrls прошлой пачки
+    }
+    document.addEventListener('app:lead-success', onLeadSuccess);
+  }
+
+  /**
+   * Документные слушатели вешаются ОДИН раз (документ переживает SPA-навигацию,
+   * поэтому гвардим флагом на window) и делают две вещи:
+   *   1) «взводят» все зоны сброса, как только над окном потащили файлы, —
+   *      человек видит, куда целиться, ещё не отпустив кнопку мыши;
+   *   2) гасят дефолт браузера при промахе мимо зоны. Без этого браузер УЙДЁТ
+   *      со страницы, открыв брошенный файл, — заполненная форма пропадёт
+   *      вместе с ней.
+   */
+  function initDocumentDnd(): void {
+    const flag = '__leadAttachDnd';
+    if ((window as unknown as Record<string, boolean>)[flag]) return;
+    (window as unknown as Record<string, boolean>)[flag] = true;
+
+    let depth = 0;
+    const zones = (): HTMLElement[] =>
+      Array.from(document.querySelectorAll<HTMLElement>('[data-attach-zone]'));
+    const disarm = (): void => {
+      depth = 0;
+      zones().forEach((zone) => zone.classList.remove('drag', 'dnd-armed'));
+    };
+
+    document.addEventListener('dragenter', (event) => {
+      if (!hasFiles(event as DragEvent)) return;
+      depth += 1;
+      zones().forEach((zone) => zone.classList.add('dnd-armed'));
+    });
+    document.addEventListener('dragleave', (event) => {
+      const drag = event as DragEvent;
+      if (!hasFiles(drag)) return;
+      depth -= 1;
+      // Уход за пределы окна даёт relatedTarget === null — снимаем сразу.
+      if (depth <= 0 || drag.relatedTarget === null) disarm();
+    });
+    document.addEventListener('dragover', (event) => {
+      if (hasFiles(event as DragEvent)) event.preventDefault();
+    });
+    document.addEventListener('drop', (event) => {
+      if (hasFiles(event as DragEvent)) event.preventDefault();
+      disarm();
+    });
+    window.addEventListener('blur', disarm);
+  }
+
+  function initLeadAttachments(): void {
+    document.querySelectorAll<HTMLElement>('[data-lead-attach]').forEach(initOne);
+    initDocumentDnd();
+  }
+
+  initLeadAttachments();
+  document.addEventListener('astro:page-load', initLeadAttachments);
+  document.addEventListener('astro:after-swap', initLeadAttachments);
+</script>

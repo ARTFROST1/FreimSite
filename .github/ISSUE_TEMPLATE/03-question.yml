@@ -1,0 +1,26 @@
+name: "💬 Question"
+description: "Something about using, extending, or deploying FreimSite"
+title: "[question] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [README](https://github.com/ARTFROST1/FreimSite#readme) and
+        [docs/en/](https://github.com/ARTFROST1/FreimSite/tree/main/docs/en) first —
+        quick start, structure, content, CMS and deploy are covered there.
+
+        Можно писать по-русски.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: "What you're building, which page of the docs you already read, whatever is relevant"

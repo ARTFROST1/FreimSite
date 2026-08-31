@@ -1,0 +1,20 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { NAV_MAIN } from '../config/nav';
+---
+<BaseLayout title="Страница не найдена — 404" description="Запрошенная страница не существует." noindex>
+  <main class="section">
+    <div class="container-page flex min-h-[50vh] flex-col items-center justify-center text-center">
+      <p class="font-heading text-7xl font-bold text-accent md:text-9xl">404</p>
+      <h1 class="mt-4 text-2xl font-bold md:text-3xl">Страница не найдена</h1>
+      <p class="mt-3 max-w-md text-muted">
+        Возможно, страница была перемещена или удалена. Проверьте адрес или вернитесь на главную.
+      </p>
+      <a href="/" class="btn btn-primary mt-8">На главную</a>
+
+      <nav class="mt-10 flex flex-wrap justify-center gap-4 text-sm text-muted">
+        {NAV_MAIN.map((item) => <a href={item.href} class="hover:text-accent">{item.label}</a>)}
+      </nav>
+    </div>
+  </main>
+</BaseLayout>

@@ -1,0 +1,172 @@
+---
+import { SITE, activeSocialLinks } from '../../config/site';
+import { NAV_FOOTER } from '../../config/nav';
+import { SOCIAL_ICON_PATHS, SOCIAL_LABELS, socialViewBox, socialFillRule } from '../../config/socialIcons';
+import type { SocialIconNetwork } from '../../config/socialIcons';
+import { phoneHref } from '../../lib/utils';
+import { getEntry } from 'astro:content';
+
+interface Props {
+  /** Опциональная подпись студии-разработчика в нижней строке подвала
+   *  ("Сделано в …"). Не передан проп — строка не рендерится: это подпись
+   *  агентства/фрилансера, а не часть бренда клиента, поэтому в конфиге
+   *  сайта (config/site.ts) её нет — только здесь, по явному решению. */
+  builtBy?: { label: string; href: string };
+}
+const { builtBy } = Astro.props;
+
+const year = new Date().getFullYear();
+
+// Client-editable text; hrefs stay structural in NAV_FOOTER (config/nav.ts).
+const FT = (await getEntry('footer', 'main'))!.data;
+const NAV = (await getEntry('navigation', 'main'))!.data;
+const ADDRESS = (await getEntry('address', 'main'))!.data;
+
+/**
+ * Мессенджеры (личный чат) и соцсети (канал/паблик) — просто два визуальных
+ * блока, разведённые для читаемости подписи колонки; цели клика на них не
+ * вешаем явно — ConversionTracking.astro сам детектит messenger_click/
+ * social_click по href (wa.me/t.me/vk.com/instagram/youtube), и href-
+ * автодетект имеет приоритет над data-goal, так что дублировать цель здесь
+ * бессмысленно (см. комментарий у иконок ниже). Пустые ссылки в SITE.social
+ * сами выпадают через activeSocialLinks(), так что сеть, которой у проекта
+ * нет, не оставляет иконку-дыру.
+ */
+const active = new Map(activeSocialLinks());
+const SOCIAL_GROUPS: {
+  key: 'messengers' | 'socials';
+  title: string;
+  networks: readonly SocialIconNetwork[];
+}[] = [
+  { key: 'messengers', title: 'Мессенджеры', networks: ['whatsapp', 'telegram', 'max'] },
+  { key: 'socials', title: 'Соцсети', networks: ['vk', 'instagram', 'youtube', 'rutube'] },
+];
+const socialGroups = SOCIAL_GROUPS.flatMap((group) => {
+  const items = group.networks
+    .filter((network) => active.has(network))
+    .map((network) => ({ network, href: active.get(network)! }));
+  return items.length ? [{ ...group, items }] : [];
+});
+---
+<footer class="border-t border-line bg-surface">
+  <div class="container-page grid gap-10 py-14 md:grid-cols-2 lg:grid-cols-4">
+    <!-- Brand -->
+    <div class="lg:col-span-1">
+      <a href="/" class="font-heading text-lg font-bold">{SITE.name}</a>
+      <p class="mt-3 max-w-xs text-sm text-muted">{SITE.description}</p>
+    </div>
+
+    <!-- "Разделы" column -->
+    <div>
+      <h3 class="font-heading text-sm font-semibold uppercase tracking-wider" data-cms="footer::columns.sections.title">{FT.columns.sections.title}</h3>
+      <ul class="mt-4 space-y-2 text-sm">
+        {NAV_FOOTER.sections.map((item) => (
+          <li>
+            <a href={item.href} class="text-muted transition-colors hover:text-accent">
+              <span data-cms={`footer::columns.sections.links.${item.id}`}>{FT.columns.sections.links[item.id]}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+
+    <!-- "Правовое" column -->
+    <div>
+      <h3 class="font-heading text-sm font-semibold uppercase tracking-wider" data-cms="footer::columns.legal.title">{FT.columns.legal.title}</h3>
+      <ul class="mt-4 space-y-2 text-sm">
+        {NAV_FOOTER.legal.map((item) => (
+          <li>
+            <a href={item.href} class="text-muted transition-colors hover:text-accent">
+              <span data-cms={`footer::columns.legal.links.${item.id}`}>{FT.columns.legal.links[item.id]}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+
+    <!-- Contacts -->
+    <div>
+      <h3 class="font-heading text-sm font-semibold uppercase tracking-wider">Контакты</h3>
+      <ul class="mt-4 space-y-2 text-sm text-muted">
+        <li>
+          <a
+            href={`tel:${phoneHref(SITE.contact.phoneRaw)}`}
+            class="hover:text-accent"
+            data-goal="phone_click"
+            data-goal-source="footer"
+            data-cms="navigation::phone"
+            data-fd-attr="href"
+            data-fd-attr-template="tel:{value}"
+          >
+            <span data-cms="navigation::phone">{NAV.phone}</span>
+          </a>
+        </li>
+        <li>
+          <a href={`mailto:${SITE.contact.email}`} class="hover:text-accent">{SITE.contact.email}</a>
+        </li>
+        <li data-cms="address::full">{ADDRESS.full}</li>
+      </ul>
+    </div>
+
+    <!-- Мессенджеры / Соцсети — иконки simple-icons (config/socialIcons.ts)
+         вместо текстовых ссылок: два блока, каждый — сетка иконок в 2 в ряд
+         одной ширины, а не одна общая лента, потому что заголовки разные и
+         набор сетей в каждом блоке свой. Строка на всю ширину сетки — у
+         групп переменное число иконок, под них не выделяют отдельную
+         колонку в основной lg:grid-cols-4. -->
+    {
+      socialGroups.length > 0 && (
+        <div class="flex flex-wrap gap-10 md:col-span-2 lg:col-span-4">
+          {socialGroups.map((group) => (
+            <div>
+              <h3 class="font-heading text-sm font-semibold uppercase tracking-wider">{group.title}</h3>
+              {/* Фиксированная ширина ровно на 2 иконки (2×h-10 + gap-2.5)
+                  + flex-wrap + justify-center: при нечётном числе иконок
+                  (например, 3 в «Соцсетях») последняя не повисает одна у
+                  левого края второго ряда, а центрируется под первым —
+                  раскладка остаётся опрятной при любом наборе сетей. */}
+              <div class="mt-4 flex w-[90px] flex-wrap justify-center gap-2.5">
+                {group.items.map(({ network, href }) => (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={SOCIAL_LABELS[network]}
+                    title={SOCIAL_LABELS[network]}
+                    data-goal-source="footer"
+                    class="flex h-10 w-10 items-center justify-center rounded-full border border-line text-muted transition-colors hover:border-accent hover:text-accent"
+                  >
+                    {/* Цели вешает href-автодетект ConversionTracking
+                        (wa.me/telegram → messenger, vk/instagram/youtube →
+                        social) — он приоритетнее data-goal, поэтому здесь
+                        его нет: дублирующий data-goal просто не сработал бы. */}
+                    <svg viewBox={socialViewBox(network)} aria-hidden="true" class="h-4 w-4 fill-current">
+                      <path d={SOCIAL_ICON_PATHS[network]} fill-rule={socialFillRule(network)} />
+                    </svg>
+                  </a>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )
+    }
+  </div>
+
+  <div class="border-t border-line">
+    <div class="container-page flex flex-col items-center justify-between gap-2 py-6 text-xs text-muted md:flex-row">
+      <div class="flex flex-col items-center gap-1.5 md:flex-row md:gap-4">
+        <p>© {year} {SITE.legalName}. <span data-cms="footer::copyrightSuffix">{FT.copyrightSuffix}</span></p>
+        <a href="/privacy-policy/" class="hover:text-accent">Политика конфиденциальности</a>
+      </div>
+      {
+        builtBy && (
+          <a href={builtBy.href} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 hover:text-accent">
+            <span>Сделано в</span>
+            <span class="font-semibold text-ink">{builtBy.label}</span>
+          </a>
+        )
+      }
+    </div>
+  </div>
+</footer>

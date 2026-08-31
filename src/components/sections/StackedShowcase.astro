@@ -1,0 +1,244 @@
+---
+/**
+ * STACKED SHOWCASE — full-height sticky cards that stack as you scroll. A
+ * premium, attention-holding way to present 3–5 key offerings. CSS-only
+ * (position: sticky) for the stacking effect itself — 0 KB JS for that part.
+ * Data from the `showcase` collection (src/content/home/showcase.json), so a
+ * CMS can edit it. The `items` prop still wins for pages that compose their
+ * own showcase.
+ *
+ * ЗАГРУЗКА «ПО ОДНОМУ КАДРУ ВПЕРЁД» (перенесено с боевого проекта,
+ * AboutSection.astro:140-185,490-538, где тот же приём страховал слайд-шоу
+ * фото цеха от разовой загрузки ~271 КБ). Причина: карточки лежат в общем
+ * скролл-контейнере впритык друг к другу, поэтому уже на входе секции во
+ * вьюпорт все карточки разом попадают в зону подгрузки браузера — одного
+ * `loading="lazy"` на каждой картинке недостаточно, все N кадров всё равно
+ * скачиваются почти одновременно. Поэтому в разметке — только ПЕРВАЯ
+ * карточка; остальные лежат в инертном `<template data-showcase-rest>`:
+ * контент шаблона не рендерится и не качает картинки, пока скрипт явно не
+ * перенесёт узел в живой DOM. Перенос — на такт вперёд: `IntersectionObserver`
+ * с запасом в экран (`rootMargin: '100% 0px'`) следит за уже показанной
+ * карточкой и, как только она приближается к вьюпорту, тут же прайм-ит
+ * следующую — к моменту, когда её реально видно, картинка уже успевает
+ * decode()-иться.
+ *
+ * ⚠️ ПОД `prefers-reduced-motion: reduce` ЗДЕСЬ — НЕ «не качать кадры 2+».
+ * В AboutSection боевого проекта (декоративное слайд-шоу фото цеха, все кадры — одна и
+ * та же мысль «мы это умеем») reduced-motion останавливает саму ротацию,
+ * поэтому кадры 2+ не нужны вообще и приём «не скачивать их никогда»
+ * ничего не отнимает у посетителя. Карточки этой секции — НЕ декорация:
+ * заголовок/описание каждой карточки — самостоятельный контент («что мы
+ * предлагаем»), а сам стек — это `position: sticky` раскладка по скроллу,
+ * а не JS-анимация в смысле vestibular-триггеров. Прятать контент 2+ под
+ * reduced-motion значит терять предложения целиком, а не просто движение.
+ * Поэтому при reduced-motion скрипт ниже, наоборот, СРАЗУ достаёт ВСЕ
+ * карточки из `<template>` в DOM одним проходом, без прайминга по одной и
+ * без ожидания приближения к вьюпорту — посетитель получает статичный
+ * список, ничего не потеряно, просто без «на такт вперёд» экономии.
+ * Приём «reduce → не качать кадры 2+» остаётся верным ТОЛЬКО для чисто
+ * декоративных слайд-шоу вроде AboutSection — не копировать его сюда
+ * бездумно для контентных карточек.
+ *
+ * NO-JS ФОЛБЭК: без JS `<template>` не разбирается вовсе, поэтому первая
+ * карточка видна всегда (голая вёрстка, sticky — чистый CSS), а остальные
+ * дублируются в `<noscript>` — там же, где секция и так проиграла бы без
+ * JS-прайминга, чтобы посетитель без скриптов и краулер видели весь набор,
+ * а не один кадр.
+ *
+ * ОДИН ЭКЗЕМПЛЯР НА СТРАНИЦУ. Скрипт ищет ПЕРВЫЙ (и единственный ожидаемый)
+ * `[data-showcase-stack]` через `querySelector`, а наблюдатель живёт в
+ * module scope — так же, как `MobileStickyCTA.astro`/`YandexMap.astro`.
+ * Если на одной странице понадобится два `<StackedShowcase>`, это осознанно
+ * не поддерживается: второй экземпляр останется без прайминга (skip: второй
+ * `[data-showcase-stack]` `querySelector` не найдёт). Мульти-инстанс —
+ * отдельная переделка (map по всем `[data-showcase-stack]` + наблюдатель на
+ * каждый), сейчас не нужна ни на одной странице стартера.
+ */
+import { getCollection } from 'astro:content';
+import type { ShowcaseSlide } from '../../config/schemas';
+import ContentImage from '../ui/ContentImage.astro';
+
+const SLIDES = (await getCollection('showcase')).map((e) => e.data);
+
+interface Props {
+  items?: ShowcaseSlide[];
+}
+const { items = SLIDES } = Astro.props;
+
+const [first, ...rest] = items;
+---
+<section class="section">
+  <div class="container-page" data-showcase-stack>
+    {
+      first && (
+        <div class="stack-card mb-6" style="top: var(--hdr-h, 5rem);">
+          <div class="relative flex h-full min-h-[80vh] items-end overflow-hidden rounded-2xl border border-line">
+            <ContentImage
+              src={first.image}
+              alt={first.title}
+              widths={[640, 1024, 1600]}
+              sizes="(min-width: 768px) 90vw, 100vw"
+              class="absolute inset-0 h-full w-full object-cover"
+              data-cms={`showcase:${first.id}:image`}
+              data-fd-attr="src"
+            />
+            <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent"></div>
+            <div class="relative p-8 text-white md:p-12">
+              <p class="eyebrow text-accent">01</p>
+              <h3 class="mt-2 text-2xl font-bold md:text-3xl" data-cms={`showcase:${first.id}:title`}>{first.title}</h3>
+              <p class="mt-3 max-w-md text-white/85" data-cms={`showcase:${first.id}:description`}>{first.description}</p>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    {
+      rest.length > 0 && (
+        <template data-showcase-rest>
+          {
+            rest.map((item, i) => (
+              <div class="stack-card mb-6" style={`top: calc(var(--hdr-h, 5rem) + ${i + 1}rem);`}>
+                <div class="relative flex h-full min-h-[80vh] items-end overflow-hidden rounded-2xl border border-line">
+                  <ContentImage
+                    src={item.image}
+                    alt={item.title}
+                    widths={[640, 1024, 1600]}
+                    sizes="(min-width: 768px) 90vw, 100vw"
+                    class="absolute inset-0 h-full w-full object-cover"
+                    data-cms={`showcase:${item.id}:image`}
+                    data-fd-attr="src"
+                  />
+                  <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent"></div>
+                  <div class="relative p-8 text-white md:p-12">
+                    <p class="eyebrow text-accent">0{i + 2}</p>
+                    <h3 class="mt-2 text-2xl font-bold md:text-3xl" data-cms={`showcase:${item.id}:title`}>{item.title}</h3>
+                    <p class="mt-3 max-w-md text-white/85" data-cms={`showcase:${item.id}:description`}>{item.description}</p>
+                  </div>
+                </div>
+              </div>
+            ))
+          }
+        </template>
+      )
+    }
+
+    {
+      rest.length > 0 && (
+        <noscript>
+          {
+            rest.map((item, i) => (
+              <div class="stack-card mb-6" style={`top: calc(var(--hdr-h, 5rem) + ${i + 1}rem);`}>
+                <div class="relative flex h-full min-h-[80vh] items-end overflow-hidden rounded-2xl border border-line">
+                  <ContentImage
+                    src={item.image}
+                    alt={item.title}
+                    widths={[640, 1024, 1600]}
+                    sizes="(min-width: 768px) 90vw, 100vw"
+                    class="absolute inset-0 h-full w-full object-cover"
+                  />
+                  <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent"></div>
+                  <div class="relative p-8 text-white md:p-12">
+                    <p class="eyebrow text-accent">0{i + 2}</p>
+                    <h3 class="mt-2 text-2xl font-bold md:text-3xl">{item.title}</h3>
+                    <p class="mt-3 max-w-md text-white/85">{item.description}</p>
+                  </div>
+                </div>
+              </div>
+            ))
+          }
+        </noscript>
+      )
+    }
+  </div>
+</section>
+
+<script>
+  /**
+   * Прайминг карточек из `<template>` в живой DOM на такт вперёд — см.
+   * doc-комментарий компонента. Module-scope observer здесь оправдан (не
+   * «безсостояньный» паттерн Situations/FAQ): по одному активному
+   * IntersectionObserver на страницу, тот же приём, что
+   * MobileStickyCTA.astro — гасим ПЕРЕД тем, как следующая навигация
+   * заведёт новый, иначе на SPA-переходе останутся два наблюдателя на
+   * отсоединённых узлах.
+   */
+  let showcaseObserver: IntersectionObserver | null = null;
+
+  function killShowcaseObserver(): void {
+    if (showcaseObserver) {
+      showcaseObserver.disconnect();
+      showcaseObserver = null;
+    }
+  }
+  document.addEventListener('astro:before-swap', killShowcaseObserver);
+
+  function initShowcase(): void {
+    // Снимаем прошлый наблюдатель ПЕРЕД тем, как заводить новый: `initShowcase`
+    // может быть вызван дважды на первичной загрузке (см. «ЗАПУСК» ниже) —
+    // без этого guard'а второй вызов оставил бы висеть отсоединённый от
+    // актуального узла observer.
+    killShowcaseObserver();
+
+    const stack = document.querySelector<HTMLElement>('[data-showcase-stack]');
+    if (!stack) return;
+
+    const tpl = stack.querySelector<HTMLTemplateElement>('template[data-showcase-rest]');
+    const pending = tpl ? Array.prototype.slice.call(tpl.content.children) : [];
+    if (!pending.length) return;
+
+    // Reduced-motion (и браузеры без IntersectionObserver) — карточки 2+ НЕ
+    // декорация, терять их нельзя (см. doc-комментарий выше). Вместо
+    // прайминга «на такт вперёд» достаём всё содержимое `<template>` в DOM
+    // одним проходом: посетитель получает статичный полный список сразу,
+    // без анимации, без наблюдателя.
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || typeof IntersectionObserver === 'undefined') {
+      for (const node of pending) stack.appendChild(node as Element);
+      return;
+    }
+
+    showcaseObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          showcaseObserver!.unobserve(entry.target);
+          primeNext();
+        }
+      },
+      // Запас в целый экран: к моменту, когда карточка реально видна,
+      // следующая уже несколько мгновений как в DOM и успевает декодировать
+      // картинку — сцена не мигает пустотой.
+      { rootMargin: '100% 0px' },
+    );
+
+    function primeNext(): void {
+      const next = pending.shift() as Element | undefined;
+      if (!next) return;
+      stack!.appendChild(next);
+      showcaseObserver!.observe(next);
+    }
+
+    const first = stack.querySelector<HTMLElement>('.stack-card');
+    if (first) showcaseObserver.observe(first);
+    else primeNext();
+  }
+
+  // ЗАПУСК: не только `astro:page-load` — на ПЕРВИЧНОЙ загрузке ClientRouter
+  // диспатчит его по `window.load` (после картинок/шрифтов/сторонних
+  // скриптов), то есть с задержкой, за которую человек на медленной сети
+  // успевает проскроллить мимо rootMargin-зоны ДО того, как наблюдатель
+  // вообще появится — карточки 2+ так и остались бы в `<template>` (тот же
+  // баг, что был у YandexMap.astro/MobileStickyCTA.astro — см. их
+  // doc-комментарии «ЗАПУСК», идентичный фикс: стартуем по готовности DOM,
+  // `astro:page-load` оставляем для SPA-переходов). Двойной вызов на
+  // первичной загрузке безопасен: `initShowcase()` сам снимает старый
+  // наблюдатель (`killShowcaseObserver()` в начале) перед тем, как завести
+  // новый.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initShowcase, { once: true });
+  } else {
+    initShowcase();
+  }
+  document.addEventListener('astro:page-load', initShowcase);
+</script>

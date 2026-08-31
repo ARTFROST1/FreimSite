@@ -1,0 +1,75 @@
+---
+/**
+ * GalleryGrid — 0-JS image grid wired to the vanilla <Lightbox />.
+ * Each tile carries data-lightbox={full} so the document-level Lightbox
+ * delegation opens the group. Alternative to the React ImageGallery island —
+ * use this when you don't need React on the page at all.
+ *
+ * Usage:
+ *   <GalleryGrid images={[{ thumb: '/images/1.webp', full: '/images/1.webp', alt: '…' }]} />
+ *   <Lightbox />  <!-- once per page -->
+ */
+import { getImage } from 'astro:assets';
+import ContentImage from './ContentImage.astro';
+import { asset } from '../../lib/images/registry';
+import { classifyImageSource, type ImageSource } from '../../lib/images/resolve';
+
+interface GalleryItem {
+  /** Small preview shown in the grid. */
+  thumb: ImageSource;
+  /** Full-size url opened in the lightbox (can equal thumb). */
+  full?: ImageSource;
+  alt?: string;
+}
+interface Props {
+  images: GalleryItem[];
+  /** Lightbox group name — separate groups don't mix on one page. */
+  group?: string;
+  class?: string;
+}
+const { images, group = 'default', class: className = '' } = Astro.props;
+
+/** Лайтбокс открывает картинку по URL из data-атрибута, поэтому для
+ *  ImageMetadata нужен конкретный оптимизированный адрес — берём широкий
+ *  вариант через getImage (тот же кеш трансформаций, что у <Image>).
+ *  Классификация источника (asset/svg/url) — общая с ContentImage, живёт
+ *  в classifyImageSource, чтобы не дублировать её здесь. */
+async function lightboxUrl(src: ImageSource): Promise<string> {
+  const classified = classifyImageSource(src, asset);
+  if (classified.kind === 'url') return classified.url;
+  if (classified.kind === 'svg') return classified.img.src;
+  const big = await getImage({ src: classified.img, width: Math.min(classified.img.width, 2000), format: 'webp' });
+  return big.src;
+}
+
+const tiles = await Promise.all(
+  images.map(async (image, i) => ({
+    i,
+    thumb: image.thumb,
+    alt: image.alt ?? `Фото ${i + 1}`,
+    href: await lightboxUrl(image.full ?? image.thumb),
+  })),
+);
+---
+<div class={`grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 ${className}`}>
+  {
+    tiles.map((tile) => (
+      <button
+        type="button"
+        class="group aspect-square overflow-hidden rounded-lg border border-line"
+        data-lightbox={tile.href}
+        data-lightbox-group={group}
+        data-goal="gallery_view"
+        aria-label={`Открыть изображение ${tile.i + 1}`}
+      >
+        <ContentImage
+          src={tile.thumb}
+          alt={tile.alt}
+          widths={[240, 480]}
+          sizes="(min-width: 1024px) 25vw, 50vw"
+          class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+        />
+      </button>
+    ))
+  }
+</div>

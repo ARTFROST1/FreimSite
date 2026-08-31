@@ -1,0 +1,40 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Breadcrumbs from '../components/seo/Breadcrumbs.astro';
+import IntroSection from '../components/sections/IntroSection.astro';
+import FeaturesSection from '../components/sections/FeaturesSection.astro';
+import CTASection from '../components/sections/CTASection.astro';
+import { SEO } from '../config/seo';
+import { getEntry } from 'astro:content';
+
+const seo = SEO.about;
+const crumbs = [{ name: 'Главная', url: '/' }, { name: 'О нас' }];
+
+// Client-editable copy for this page lives in the `pages` singleton.
+const PAGE = (await getEntry('pages', 'main'))!.data.about;
+---
+<BaseLayout title={seo.title} description={seo.description} ogImage={seo.ogImage}>
+  <main>
+    <section class="section pb-0">
+      <div class="container-page max-w-3xl">
+        <Breadcrumbs items={crumbs} class="mb-6" />
+        <h1 class="text-4xl font-bold md:text-5xl" data-cms="pages::about.heading.title">{PAGE.heading.title}</h1>
+        <p class="mt-5 text-lg text-muted" data-cms="pages::about.heading.subtitle">{PAGE.heading.subtitle}</p>
+      </div>
+    </section>
+
+    <IntroSection
+      eyebrow={PAGE.intro.eyebrow}
+      title={PAGE.intro.title}
+      body={PAGE.intro.body}
+      cmsScope="pages::about.intro"
+    />
+    <FeaturesSection
+      eyebrow={PAGE.values.eyebrow}
+      title={PAGE.values.title}
+      subtitle={PAGE.values.subtitle}
+      cmsScope="pages::about.values"
+    />
+    <CTASection />
+  </main>
+</BaseLayout>

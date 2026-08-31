@@ -1,0 +1,349 @@
+---
+/**
+ * YandexMap — production-grade interactive map block (ported from the
+ * catalogue reference).
+ *
+ * Yandex Maps JS API with a custom accent pin, lazy-loaded on scroll
+ * (IntersectionObserver, rootMargin 600px), with a tap-to-activate guard so
+ * page scroll/swipe over the map is never hijacked. Degrades to an <iframe>
+ * fallback when PUBLIC_MAPS_API_KEY is missing, the API fails to load, or
+ * doesn't render within 7s. <noscript> iframe for no-JS/crawlers.
+ *
+ * ВАЖНО. Наблюдатель ставится по `DOMContentLoaded`, а НЕ по одному только
+ * `astro:page-load`: ClientRouter диспатчит последний на первичной загрузке по
+ * `window.load` (astro/dist/transitions/router.js — `addEventListener("load",
+ * onPageLoad)`), то есть после всех картинок, шрифтов и сторонних скриптов.
+ * На боевом сайте это давало многосекундную задержку, а если человек успевал
+ * проскроллить мимо секции — карта не появлялась вовсе (наблюдатель, созданный
+ * на уже уехавшем элементе, не срабатывает). Разбор — 24.08.2026, регрессия
+ * закрыта тестом src/components/ui/__tests__/yandex-map-boot.test.ts.
+ * Тот же капкан ждёт ЛЮБОЙ скрипт, который лениво что-то подгружает: если он
+ * висит только на `astro:page-load`, он стартует не раньше `window.load`.
+ *
+ * One instance per page. Coordinates default to SITE.geo.
+ *
+ * Usage:
+ *   <div class="h-96 rounded-xl overflow-hidden">
+ *     <YandexMap class="h-full" />
+ *   </div>
+ */
+import { SITE } from '../../config/site';
+
+interface Props {
+  lat?: number;
+  lng?: number;
+  zoom?: number;
+  /** Hint/tooltip on the marker. */
+  markerHint?: string;
+  /** Pin fill color (SVG). Default — the theme accent. */
+  markerColor?: string;
+  /** Desaturate map tiles (premium look on dark sites). */
+  grayscale?: boolean;
+  class?: string;
+  [key: string]: unknown;
+}
+
+const {
+  lat = SITE.geo.lat,
+  lng = SITE.geo.lng,
+  zoom = 15,
+  markerHint = SITE.name,
+  markerColor = '#c2703d',
+  grayscale = false,
+  class: className = '',
+  ...rest
+} = Astro.props;
+
+const mapsApiKey = import.meta.env.PUBLIC_MAPS_API_KEY ?? '';
+const iframeSrc = `https://yandex.ru/map-widget/v1/?ll=${lng}%2C${lat}&z=${zoom}&pt=${lng}%2C${lat}%2Cpm2rdl&lang=ru_RU&navi=0`;
+// Обесцвечивание фолбэк-iframe идёт инлайн-стилем, а не CSS-правилом ниже:
+// то целится в панели JS-карты, внутрь чужого iframe оно не достаёт.
+const iframeFilter = grayscale ? 'filter: grayscale(1) brightness(1.03);' : '';
+
+// Ключа нет на момент СБОРКИ — значит на проде карта молча деградирует в
+// map-widget: ни фирменной метки, ни настроек, а обесцвечивание ляжет на весь
+// виджет вместе с интерфейсом Яндекса. Молчать об этом нельзя: именно так
+// ключ однажды потеряли при переносе (в эталоне-каталоге переменная звалась
+// PUBLIC_YANDEX_MAPS_API_KEY, здесь — PUBLIC_MAPS_API_KEY, значение не
+// доехало, и никто не заметил). Сборка статическая: переменная нужна в
+// окружении билда, а не рантайма.
+// Флаг на globalThis, а не обычная переменная: фронтматтер исполняется на
+// КАЖДУЮ отрендеренную страницу, и без него предупреждение засоряло бы лог
+// сборки построчно.
+if (!mapsApiKey && !import.meta.env.DEV && !(globalThis as any).__mapsKeyWarned) {
+  (globalThis as any).__mapsKeyWarned = true;
+  console.warn(
+    '\n[YandexMap] PUBLIC_MAPS_API_KEY пуст на момент сборки — карта будет ' +
+      'отдавать фолбэк-iframe без фирменной метки и без обесцвечивания тайлов.' +
+      '\n            Переменная нужна в окружении СБОРКИ, а не рантайма.\n',
+  );
+}
+---
+
+<div class={`relative overflow-hidden bg-surface ${className}`} {...rest}>
+  <div id="yandex-map" class="absolute inset-0 h-full w-full" data-grayscale={grayscale ? '1' : '0'}></div>
+
+  <!-- Tap-to-activate guard: blocks accidental drag/scroll capture until the
+       user explicitly clicks/taps. touch-action: pan-y lets vertical swipes
+       scroll the page while the overlay is up. -->
+  <button
+    type="button"
+    id="map-overlay"
+    class="absolute inset-0 z-10 flex items-end justify-center bg-transparent p-4 transition-opacity duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+    style="touch-action: pan-y;"
+    aria-label="Нажмите, чтобы взаимодействовать с картой"
+  >
+    <span class="pointer-events-none rounded-full bg-black/55 px-4 py-2 text-xs font-semibold text-white/90 shadow-lg backdrop-blur-sm">
+      Нажмите, чтобы взаимодействовать с картой
+    </span>
+  </button>
+
+  <noscript>
+    <iframe
+      src={iframeSrc}
+      width="100%"
+      height="100%"
+      class="absolute inset-0 h-full w-full border-0"
+      style={iframeFilter}
+      allowfullscreen
+      loading="lazy"
+      title={`${SITE.name} на карте`}
+    ></iframe>
+  </noscript>
+</div>
+
+<style is:global>
+  /* Grayscale via CSS (not JS-applied inline style): Yandex recreates the
+     ground pane on tile reload / DPR change, dropping JS-applied filters.
+     Targeting the pane by class substring re-applies automatically. The
+     marker lives in a different pane and keeps its color. */
+  #yandex-map[data-grayscale='1'] [class*='ground-pane'],
+  #yandex-map[data-grayscale='1'] canvas {
+    filter: grayscale(1) brightness(1.03);
+  }
+
+  /* Скелетон на время загрузки — чистым CSS через `:empty`, без участия JS:
+     контейнер пуст ровно до того момента, когда ymaps (или фолбэк-iframe)
+     положит внутрь первый узел. Без него секунды ожидания читаются как
+     «карта сломалась». */
+  #yandex-map:empty {
+    background: linear-gradient(
+      100deg,
+      var(--color-surface) 30%,
+      var(--color-paper) 50%,
+      var(--color-surface) 70%
+    );
+    background-size: 280% 100%;
+    animation: yandex-map-skeleton 1.6s ease-in-out infinite;
+  }
+
+  @keyframes yandex-map-skeleton {
+    from { background-position: 140% 0; }
+    to { background-position: -40% 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #yandex-map:empty {
+      animation: none;
+      background: var(--color-surface);
+    }
+  }
+</style>
+
+<script is:inline define:vars={{ lat, lng, zoom, markerHint, markerColor, mapsApiKey, iframeSrc, iframeFilter }}>
+  // Re-runs on every SPA navigation (swapped with the page) so the map
+  // re-initialises when the user returns. The Yandex API script itself is
+  // injected at most once (guarded by id) and reused.
+  function appInitMapSection() {
+    var INTERACTIVE_BEHAVIORS = ['drag', 'scrollZoom', 'multiTouch'];
+    var mapInstance = null;
+    var mapActivated = false;
+    // True once EITHER the JS map or the iframe fallback has finalised —
+    // prevents a late JS API from clobbering an already-rendered iframe.
+    var settled = false;
+    var observer = null;
+    var resizeObserver = null;
+    var overlay = document.getElementById('map-overlay');
+    var mapEl = document.getElementById('yandex-map');
+    if (!mapEl) return;
+    // Точку входа дёргают дважды (см. блок запуска внизу): по готовности DOM
+    // и по `astro:page-load`. Флаг живёт на самом узле, а не в замыкании:
+    // после SPA-свопа узел новый и флага на нём нет, значит возврат на
+    // страницу честно переинициализирует карту.
+    if (mapEl.dataset.mapBooted) return;
+    mapEl.dataset.mapBooted = '1';
+
+    function enableInteraction() { if (mapInstance) mapInstance.behaviors.enable(INTERACTIVE_BEHAVIORS); }
+    function disableInteraction() { if (mapInstance) mapInstance.behaviors.disable(INTERACTIVE_BEHAVIORS); }
+
+    function activateMap() {
+      mapActivated = true;
+      enableInteraction();
+      if (overlay) {
+        overlay.classList.add('opacity-0', 'pointer-events-none');
+        overlay.setAttribute('aria-hidden', 'true');
+        overlay.setAttribute('tabindex', '-1');
+      }
+    }
+    function deactivateMap() {
+      mapActivated = false;
+      disableInteraction();
+      if (overlay) {
+        overlay.classList.remove('opacity-0', 'pointer-events-none');
+        overlay.removeAttribute('aria-hidden');
+        overlay.removeAttribute('tabindex');
+      }
+    }
+
+    if (overlay) {
+      overlay.addEventListener('click', activateMap);
+      // Desktop only: restore the guard when the cursor leaves, so a later
+      // page scroll over this area isn't captured. Touch unaffected.
+      overlay.parentElement && overlay.parentElement.addEventListener('pointerleave', function (e) {
+        if (e.pointerType === 'mouse' && mapActivated) deactivateMap();
+      });
+    }
+
+    // Reliable fallback: map-widget iframe. The tap-to-activate overlay is
+    // KEPT — activateMap() just drops its pointer-events so the iframe
+    // becomes interactive only after an explicit tap.
+    function renderIframeFallback() {
+      if (settled) return;
+      settled = true;
+      // loading="eager", а не "lazy" как в <noscript>-ветке: этот iframe
+      // вставляется ТОЛЬКО когда секция уже во вьюпорте, и «ленивость» здесь
+      // не экономит трафик, а лишь добавляет лишний раунд решения браузера
+      // поверх и так небыстрого map-widget.
+      mapEl.innerHTML =
+        '<iframe src="' + iframeSrc + '" width="100%" height="100%" ' +
+        'style="border:0;position:absolute;inset:0;' + iframeFilter + '" allowfullscreen loading="eager" title="Карта"></iframe>';
+    }
+
+    function initMap() {
+      if (settled) return;
+      if (typeof window.ymaps === 'undefined') { renderIframeFallback(); return; }
+      window.ymaps.ready(function () {
+        if (settled) return;
+        try {
+          var map = new window.ymaps.Map('yandex-map', {
+            center: [lat, lng],
+            zoom: zoom,
+            controls: ['zoomControl'],
+          });
+
+          // Accent teardrop pin with a white center + drop shadow, tip on the coordinate.
+          var markerSvg = encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 52" width="40" height="52">' +
+            '<defs><filter id="ms" x="-40%" y="-20%" width="180%" height="150%">' +
+            '<feDropShadow dx="0" dy="2" stdDeviation="2.4" flood-color="#000" flood-opacity="0.35"/>' +
+            '</filter></defs>' +
+            '<path filter="url(#ms)" d="M20 1.5C10.06 1.5 2 9.56 2 19.5c0 12.6 18 30 18 30s18-17.4 18-30C38 9.56 29.94 1.5 20 1.5z" fill="' + markerColor + '" stroke="#ffffff" stroke-width="2.5"/>' +
+            '<circle cx="20" cy="19.5" r="6.4" fill="#ffffff"/>' +
+            '</svg>'
+          );
+          map.geoObjects.add(new window.ymaps.Placemark(
+            [lat, lng],
+            { hintContent: markerHint },
+            {
+              iconLayout: 'default#image',
+              iconImageHref: 'data:image/svg+xml,' + markerSvg,
+              iconImageSize: [40, 52],
+              iconImageOffset: [-20, -50],
+            }
+          ));
+          mapInstance = map;
+          settled = true;
+
+          // Refit on container resize (grid reflow, orientation change).
+          if ('ResizeObserver' in window) {
+            var rafId = 0;
+            resizeObserver = new ResizeObserver(function () {
+              if (rafId) return;
+              rafId = requestAnimationFrame(function () {
+                rafId = 0;
+                try { map.container.fitToViewport(); } catch (e) { /* torn down */ }
+              });
+            });
+            resizeObserver.observe(mapEl);
+          }
+
+          if (mapActivated) enableInteraction();
+          else disableInteraction();
+        } catch (e) {
+          renderIframeFallback();
+        }
+      });
+    }
+
+    // Секция подъехала (или мы поняли, что уже проехали мимо) — тянем API.
+    function startLoading() {
+      if (observer) { observer.disconnect(); observer = null; }
+      if (settled) return;
+      if (!mapsApiKey) { renderIframeFallback(); return; }
+      // Safety net: no JS map within 7s (slow net, ad-blocked API, hung
+      // script) → iframe, so the user never sees a blank box. Таймер живёт
+      // здесь, а не в точке запуска: иначе на любой странице с картой
+      // через 7 секунд грузился бы тяжёлый map-widget, даже если до секции
+      // никто так и не дошёл — то есть ленивая загрузка обнулялась бы.
+      window.setTimeout(function () { if (!settled) renderIframeFallback(); }, 7000);
+      if (typeof window.ymaps !== 'undefined') { initMap(); return; }
+      var existing = document.getElementById('ymaps-api-script');
+      if (existing) { existing.addEventListener('load', initMap); return; }
+      var script = document.createElement('script');
+      script.id = 'ymaps-api-script';
+      script.src = 'https://api-maps.yandex.ru/2.1/?apikey=' + encodeURIComponent(mapsApiKey) + '&lang=ru_RU';
+      script.onload = initMap;
+      script.onerror = renderIframeFallback;
+      document.head.appendChild(script);
+    }
+
+    // Экран может стоять УЖЕ НИЖЕ карты — восстановление позиции
+    // прокрутки после свопа, переход по якорю, перезагрузка на середине
+    // страницы. IntersectionObserver в таком случае отдаёт стартовый колбэк
+    // с isIntersecting:false и больше не сработает НИКОГДА, пока не прокрутят
+    // обратно вверх. Поэтому «уже проехали» проверяем сами.
+    if (mapEl.getBoundingClientRect().bottom < 0) {
+      startLoading();
+    } else {
+      // rootMargin с запасом: 200px отрабатывали впритык — секция
+      // входила в кадр раньше, чем успевал ответить API.
+      observer = new IntersectionObserver(function (entries) {
+        for (var i = 0; i < entries.length; i++) {
+          if (entries[i].isIntersecting) { startLoading(); return; }
+        }
+      }, { rootMargin: '600px' });
+      observer.observe(mapEl);
+    }
+
+    // Уход со страницы SPA-переходом: снимаем за собой наблюдателей и рвём
+    // инстанс ymaps, иначе он вместе с ResizeObserver остаётся висеть на
+    // оторванном узле и течёт при каждом возврате.
+    document.addEventListener('astro:before-swap', function cleanup() {
+      document.removeEventListener('astro:before-swap', cleanup);
+      if (observer) { observer.disconnect(); observer = null; }
+      if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null; }
+      if (mapInstance) {
+        try { mapInstance.destroy(); } catch (e) { /* уже снесён */ }
+        mapInstance = null;
+      }
+    });
+  }
+
+  // ЗАПУСК. Раньше здесь был только `astro:page-load` — и это была причина
+  // того, что карта появлялась с огромной задержкой или не появлялась вовсе:
+  // ClientRouter диспатчит это событие на ПЕРВИЧНОЙ загрузке по `window.load`
+  // (astro/dist/transitions/router.js — `addEventListener("load", onPageLoad)`),
+  // то есть после всех картинок, шрифтов и сторонних скриптов. До этого
+  // момента наблюдателя за секцией просто не существовало, и человек на
+  // медленной сети успевал проскроллить мимо — а наблюдатель, созданный на
+  // уже уехавшей секции, не срабатывает.
+  //
+  // Поэтому стартуем по готовности DOM, а `astro:page-load` оставляем для
+  // SPA-переходов. Двойной вызов безопасен — его гасит флаг `data-map-booted`.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', appInitMapSection, { once: true });
+  } else {
+    appInitMapSection();
+  }
+  document.addEventListener('astro:page-load', appInitMapSection);
+</script>

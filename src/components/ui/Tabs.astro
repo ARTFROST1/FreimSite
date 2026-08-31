@@ -1,0 +1,337 @@
+---
+/**
+ * ============================================================================
+ *  Tabs — доступные табы по APG-паттерну (tablist / tab / tabpanel).
+ * ----------------------------------------------------------------------------
+ *  Адаптация двух MIT-референсов (`.research/`):
+ *   - accessible-astro-components/tabs — роли и ARIA-связки
+ *     (aria-controls/labelledby/selected), roving tabindex, стрелки
+ *     с закольцовыванием;
+ *   - starwind-ui/tabs — идея `syncKey`: несколько одинаковых табов на
+ *     странице переключаются синхронно, выбор переживает перезагрузку
+ *     через localStorage.
+ *
+ *  Отличия от референсов (сознательные улучшения):
+ *   - однофайловый декларативный API: массив `tabs` + именованные слоты по id
+ *     вкладки — без четырёх вложенных компонентов;
+ *   - Home/End в дополнение к стрелкам (полный APG);
+ *   - панели скрываются атрибутом `hidden` (а не aria-hidden + display:none в
+ *     CSS) — состояние читается из разметки и не зависит от загрузки стилей;
+ *   - `tabindex="0"` на панели: Tab с вкладки ведёт внутрь контента, даже если
+ *     в панели нет фокусируемых элементов (совет APG);
+ *   - панель ищется через `document.getElementById(aria-controls)` — та самая
+ *     связка, которую читает скринридер, и есть источник истины для скрипта;
+ *   - все слушатели делегированы на document (паттерн `Lightbox.astro`):
+ *     ничего не замыкает пер-страничные узлы, SPA-навигация безопасна.
+ *
+ *  АКТИВАЦИЯ — автоматическая (APG «Tabs with Automatic Activation»): стрелки
+ *  перемещают фокус И сразу показывают панель.
+ *
+ *  СОСТОЯНИЕ БЕЗ JS: активная вкладка и её панель отрендерены сервером
+ *  (aria-selected + отсутствие hidden), контент первой/`initial` вкладки виден
+ *  краулеру и до загрузки скрипта. Остальные панели скрыты `hidden` — но их
+ *  текст всё равно в HTML (SEO не страдает).
+ *
+ *  SPA-safe (docs/recipes/animations-motion.md §2): документ-уровневые
+ *  слушатели — один раз за жизнь документа (`window.__tabsInit`, объявлен
+ *  в env.d.ts — общий дом флагов), пер-страничная инициализация
+ *  (localStorage-выбор при `syncKey`) — по готовности DOM и на каждый
+ *  `astro:page-load` («ЗАПУСК» как у Carousel/BeforeAfter: на первичной
+ *  загрузке page-load приходит лишь по window.load — ждать его значит
+ *  показать скачок вкладки при восстановлении выбора); уже обработанные
+ *  экземпляры помечены `data-tabs-ready` и пропускаются.
+ *
+ * @example
+ *   <Tabs
+ *     tabs={[
+ *       { id: 'delivery', label: 'Доставка' },
+ *       { id: 'payment', label: 'Оплата' },
+ *     ]}
+ *     initial="delivery"
+ *     syncKey="delivery-info"
+ *   >
+ *     <Fragment slot="delivery"><p>Привезём за 2 дня…</p></Fragment>
+ *     <Fragment slot="payment"><p>Карта, счёт, рассрочка…</p></Fragment>
+ *   </Tabs>
+ * ============================================================================
+ */
+interface TabDef {
+  /** Логический id вкладки — он же имя слота с её контентом. */
+  id: string;
+  /** Видимый текст вкладки. */
+  label: string;
+}
+
+interface Props {
+  tabs: TabDef[];
+  /** id активной по умолчанию вкладки. Не передан / не найден — первая. */
+  initial?: string;
+  /**
+   * Ключ синхронизации: экземпляры с одним `syncKey` переключаются вместе,
+   * выбор запоминается в localStorage (все обращения — в try/catch: privacy
+   * mode / отключённое хранилище не роняют табы).
+   */
+  syncKey?: string;
+  /** aria-label списка вкладок. */
+  label?: string;
+  /**
+   * Префикс DOM-id вкладок/панелей (`<id>-tab-<tabId>`, `<id>-panel-<tabId>`).
+   * По умолчанию — детерминированный хэш от id вкладок + `syncKey`; у
+   * одинаковых экземпляров на одной странице к хэшу добавляется порядковый
+   * суффикс (`-2`, `-3`…). Задавай явно, когда на id нужно ссылаться извне
+   * (якорь, `aria-controls` соседа).
+   */
+  id?: string;
+  class?: string;
+}
+
+const { tabs, initial, syncKey, label = 'Вкладки', id, class: className } = Astro.props;
+
+const activeId = tabs.some((t) => t.id === initial) ? initial : tabs[0]?.id;
+
+/* Уникальный префикс DOM-id: id вкладок (`overview`, `payment`…) могут
+   повторяться между экземплярами на одной странице, а `aria-controls` и
+   `getElementById` требуют глобально уникальных id. Без случайных чисел —
+   HTML обязан быть одинаковым от сборки к сборке (диффы, кэш, снапшоты). */
+
+/** FNV-1a 32-бит → base36: короткий стабильный хэш строки. */
+function shortHash(input: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
+}
+
+/* Счётчик коллизий — по пути страницы. НЕ WeakMap по Astro.request: при
+   prerender каждый рендер компонента видит СВОЙ объект Request, счётчик
+   никогда не растёт и два одинаковых экземпляра получают один id
+   (найдено на /ui-kit/). Модульный Map по pathname: в prod-сборке страница
+   рендерится один раз → id детерминированы; в dev при HMR-перерендерах
+   счётчик растёт (id меняются между перезагрузками, но уникальны внутри
+   страницы) — для тестов и CMS это неважно. */
+const collisions = new Map<string, number>();
+function uniquePrefix(base: string): string {
+  const key = `${Astro.url.pathname}::${base}`;
+  const n = (collisions.get(key) ?? 0) + 1;
+  collisions.set(key, n);
+  return n === 1 ? base : `${base}-${n}`;
+}
+
+const uid =
+  id ?? uniquePrefix(`tabs-${shortHash(tabs.map((t) => t.id).join('|') + '#' + (syncKey ?? ''))}`);
+---
+
+<div class:list={['tabs', className]} data-tabs data-tabs-sync={syncKey}>
+  <div class="tabs-list" role="tablist" aria-label={label}>
+    {
+      tabs.map((t) => (
+        <button
+          type="button"
+          id={`${uid}-tab-${t.id}`}
+          class="tabs-tab"
+          role="tab"
+          aria-selected={t.id === activeId ? 'true' : 'false'}
+          aria-controls={`${uid}-panel-${t.id}`}
+          tabindex={t.id === activeId ? 0 : -1}
+          data-tabs-value={t.id}
+        >
+          {t.label}
+        </button>
+      ))
+    }
+  </div>
+  {
+    tabs.map((t) => (
+      <div
+        id={`${uid}-panel-${t.id}`}
+        class="tabs-panel"
+        role="tabpanel"
+        aria-labelledby={`${uid}-tab-${t.id}`}
+        tabindex="0"
+        hidden={t.id !== activeId}
+      >
+        <slot name={t.id} />
+      </div>
+    ))
+  }
+</div>
+
+<style>
+  .tabs-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--color-line);
+  }
+  .tabs-tab {
+    cursor: pointer;
+    border: none;
+    background: none;
+    padding: 0.625rem 1rem;
+    font-weight: 500;
+    color: var(--color-muted);
+    /* Активная полоска «сидит» на нижней границе списка. */
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition:
+      color 0.15s ease,
+      border-color 0.15s ease;
+  }
+  .tabs-tab:hover {
+    color: var(--color-ink);
+  }
+  .tabs-tab[aria-selected='true'] {
+    color: var(--color-accent);
+    border-bottom-color: var(--color-accent);
+  }
+  /* Клавиатурный фокус обязан быть видимым — и на вкладке, и на панели
+     (у панели tabindex="0", см. doc-comment). */
+  .tabs-tab:focus-visible,
+  .tabs-panel:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+  .tabs-panel {
+    padding-top: 1.25rem;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tabs-tab {
+      transition: none;
+    }
+  }
+</style>
+
+<script>
+  /* Весь скрипт — делегирование на document: ни один слушатель не замыкает
+     пер-страничный DOM-узел, узлы ищутся заново при каждом событии
+     (канон Lightbox.astro / animations-motion.md §2). */
+  const STORAGE_PREFIX = 'tabs-sync:';
+
+  /** Вкладки ИМЕННО этого экземпляра (`:scope` не задевает вложенные табы). */
+  function tabsOf(root: HTMLElement): HTMLButtonElement[] {
+    return Array.from(
+      root.querySelectorAll<HTMLButtonElement>(':scope > [role="tablist"] > [role="tab"]'),
+    );
+  }
+
+  /**
+   * Активирует вкладку: aria-selected + roving tabindex на вкладках, `hidden`
+   * на панелях (панель находится по aria-controls → getElementById — той же
+   * связке, что читает скринридер).
+   */
+  function select(
+    root: HTMLElement,
+    tab: HTMLButtonElement,
+    opts: { focus?: boolean; sync?: boolean } = {},
+  ): void {
+    for (const t of tabsOf(root)) {
+      const on = t === tab;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.setAttribute('tabindex', on ? '0' : '-1');
+      const panel = document.getElementById(t.getAttribute('aria-controls') ?? '');
+      if (panel) panel.hidden = !on;
+    }
+    if (opts.focus) tab.focus();
+    if (opts.sync !== false) propagate(root, tab.dataset.tabsValue ?? '');
+  }
+
+  /** syncKey: запомнить выбор и повторить его в экземплярах-близнецах. */
+  function propagate(root: HTMLElement, value: string): void {
+    const key = root.dataset.tabsSync;
+    if (!key || !value) return;
+    try {
+      localStorage.setItem(STORAGE_PREFIX + key, value);
+    } catch {
+      /* приватный режим / отключённое хранилище — синхронизация в рамках
+         страницы всё равно работает */
+    }
+    document.querySelectorAll<HTMLElement>('[data-tabs][data-tabs-sync]').forEach((other) => {
+      if (other === root || other.dataset.tabsSync !== key) return;
+      const twin = tabsOf(other).find((t) => t.dataset.tabsValue === value);
+      if (twin && twin.getAttribute('aria-selected') !== 'true') {
+        select(other, twin, { sync: false });
+      }
+    });
+  }
+
+  /**
+   * Пер-страничная инициализация: серверная разметка уже валидна, скрипту
+   * остаётся только применить сохранённый в localStorage выбор к экземплярам
+   * с `syncKey`. Обработанные помечаются `data-tabs-ready` — повторный
+   * `astro:page-load` без смены DOM ничего не делает дважды.
+   */
+  function initTabs(): void {
+    document
+      .querySelectorAll<HTMLElement>('[data-tabs]:not([data-tabs-ready])')
+      .forEach((root) => {
+        root.setAttribute('data-tabs-ready', '1');
+        const key = root.dataset.tabsSync;
+        if (!key) return;
+        let stored: string | null = null;
+        try {
+          stored = localStorage.getItem(STORAGE_PREFIX + key);
+        } catch {
+          return;
+        }
+        if (!stored) return;
+        const tab = tabsOf(root).find((t) => t.dataset.tabsValue === stored);
+        if (tab && tab.getAttribute('aria-selected') !== 'true') {
+          select(root, tab, { sync: false });
+        }
+      });
+  }
+
+  if (!window.__tabsInit) {
+    window.__tabsInit = true;
+
+    document.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement | null;
+      const tab = target?.closest?.<HTMLButtonElement>('[role="tab"][data-tabs-value]');
+      const root = tab?.closest<HTMLElement>('[data-tabs]');
+      if (!tab || !root) return;
+      select(root, tab);
+    });
+
+    document.addEventListener('keydown', (e) => {
+      const target = e.target as HTMLElement | null;
+      const tab = target?.closest?.<HTMLButtonElement>('[role="tab"][data-tabs-value]');
+      const root = tab?.closest<HTMLElement>('[data-tabs]');
+      if (!tab || !root) return;
+      const all = tabsOf(root);
+      const i = all.indexOf(tab);
+      if (i === -1) return;
+      let next: number;
+      switch (e.key) {
+        case 'ArrowRight':
+          next = (i + 1) % all.length;
+          break;
+        case 'ArrowLeft':
+          next = (i - 1 + all.length) % all.length;
+          break;
+        case 'Home':
+          next = 0;
+          break;
+        case 'End':
+          next = all.length - 1;
+          break;
+        default:
+          return;
+      }
+      e.preventDefault();
+      select(root, all[next], { focus: true });
+    });
+
+    // ЗАПУСК: как у Carousel/BeforeAfter — на первичной загрузке
+    // astro:page-load приходит лишь по window.load, стартуем по готовности
+    // DOM; page-load остаётся для SPA-переходов. Повтор безопасен: data-tabs-ready.
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initTabs, { once: true });
+    } else {
+      initTabs();
+    }
+    document.addEventListener('astro:page-load', initTabs);
+  }
+</script>

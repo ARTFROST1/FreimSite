@@ -1,0 +1,40 @@
+---
+/**
+ * CategoryCard — catalog index tile for one category (dark-gradient photo
+ * card, port of the catalogue reference's `katalog.astro` cards without its
+ * palette/tokens).
+ *
+ * data-cms: name/description размечены (`categories:<id>:…`) — та же
+ * коллекция, что читает страница категории ([...slug].astro). Картинка НЕ
+ * размечена `data-fd-attr="src"`: значение поля — ключ реестра
+ * (`asset(...)`), а не URL, править его click-to-edit нельзя.
+ */
+import ContentImage from '../ui/ContentImage.astro';
+import type { CatalogCategory } from '../../config/schemas';
+
+interface Props {
+  category: CatalogCategory;
+  href: string;
+}
+const { category, href } = Astro.props;
+const { id, name, description, image } = category;
+---
+<a
+  href={href}
+  class="group relative flex aspect-[4/3] flex-col justify-end overflow-hidden rounded-2xl text-paper no-underline shadow-sm transition-transform duration-300 hover:-translate-y-1"
+>
+  <ContentImage
+    src={image ?? '/images/placeholder.svg'}
+    alt={name}
+    widths={[320, 480, 640]}
+    sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+    width={640}
+    height={480}
+    class="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+  />
+  <span class="absolute inset-0 bg-gradient-to-t from-ink/85 via-ink/25 to-transparent" aria-hidden="true"></span>
+  <span class="relative flex flex-col gap-1 p-5">
+    <span class="text-xl font-bold tracking-tight" data-cms={`categories:${id}:name`}>{name}</span>
+    {description && <span class="text-sm text-paper/80" data-cms={`categories:${id}:description`}>{description}</span>}
+  </span>
+</a>

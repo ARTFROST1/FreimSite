@@ -1,0 +1,198 @@
+---
+/**
+ * LeadForm — vanilla lead-capture form (телефон + согласие), 0 KB React.
+ * The lightweight alternative to the ContactForm React island: use it for
+ * CTA sections, popups, and anywhere a one-tap "оставьте телефон" form fits.
+ *
+ * Enhancement lives in src/lib/lead-form.ts (shared engine): +7 phone mask,
+ * validation, consent highlight, UTM/client_id capture, fetch submit с
+ * повторами при сетевых сбоях, цели `lead_contact`/`lead_submit`, popup
+ * silencing. Works without JS too (plain POST).
+ *
+ * `earlyContact` — опциональная ранняя фиксация контакта (см. Props ниже).
+ * `allowFiles` — опциональные вложения (LeadAttachments.astro): скрепка,
+ * drag&drop и переключение сабмита на multipart делаются сами.
+ *
+ * success modes:
+ *   'inline'   — hide form, show the inline «Спасибо» block (default).
+ *   'redirect' — navigate to /thanks/ (conversion page pattern).
+ *   'event'    — parent listens for `app:lead-success` and renders success
+ *                (used by LeadPopup).
+ */
+import LeadAttachments from './LeadAttachments.astro';
+
+interface Props {
+  /** Analytics label: which surface this form sits on (hero/cta/popup/...). */
+  source: string;
+  submitLabel?: string;
+  success?: 'redirect' | 'inline' | 'event';
+  /** 'inline' — phone+button in a row; 'stacked' — full-width column. */
+  layout?: 'inline' | 'stacked';
+  phoneId?: string;
+  /**
+   * Ранняя фиксация контакта: как только телефон введён полностью И стоит
+   * галочка согласия, лид уходит черновиком на сервер, не дожидаясь кнопки
+   * (цель `lead_contact`), а флашер отправит его менеджерам через
+   * LEAD_FLUSH_MINUTES. Включайте на ГЛАВНОЙ форме проекта — там, где потеря
+   * контакта дороже всего. Для попапов и коротких CTA оставляйте выключенным:
+   * писать данные до явного действия посетителя там неуместно.
+   * Требует hybrid-режим (встроенные роуты `/api/lead/*`) — с внешним
+   * `PUBLIC_CONTACT_ENDPOINT` черновиков нет, и атрибут ничего не даст.
+   * Подробности — docs/recipes/lead-pipeline.md §4.
+   */
+  earlyContact?: boolean;
+  /**
+   * Прикрепление файлов (скрепка + drag&drop, см. LeadAttachments.astro).
+   * Включайте там, где вложение реально помогает считать заявку — замер,
+   * скан, фото объекта. Для короткого CTA «оставьте телефон» лишний блок
+   * только удлиняет форму. Требует hybrid-режим (встроенный `/api/lead/*`):
+   * внешний `PUBLIC_CONTACT_ENDPOINT` про multipart-вложения не знает.
+   */
+  allowFiles?: boolean;
+  /** Подсказка под зоной: что полезно приложить именно в этом проекте. */
+  filesNote?: string;
+}
+
+const {
+  source,
+  submitLabel = 'Оставить заявку',
+  success = 'inline',
+  layout = 'inline',
+  phoneId = `lead-phone-${source}`,
+  earlyContact = false,
+  allowFiles = false,
+  filesNote,
+} = Astro.props;
+
+const rowClass =
+  layout === 'stacked'
+    ? 'flex w-full flex-col gap-2.5'
+    : 'flex w-full flex-wrap gap-2.5';
+---
+
+<div class="flex w-full max-w-lg flex-col gap-2.5">
+  <form
+    data-lead-form
+    data-lead-source={source}
+    data-lead-success={success}
+    data-lead-draft={earlyContact ? '' : undefined}
+    action="/api/contact"
+    method="POST"
+    novalidate
+    class="flex w-full flex-col gap-2.5"
+  >
+    <div aria-hidden="true" style="position:absolute; left:-9999px; height:0; width:0; overflow:hidden;">
+      <input type="text" name="hp_token" tabindex="-1" autocomplete="off" />
+    </div>
+    <!-- Attribution (filled client-side by lead-form.ts; harmless if empty) -->
+    <input type="hidden" name="utm_source" value="" />
+    <input type="hidden" name="utm_medium" value="" />
+    <input type="hidden" name="utm_campaign" value="" />
+    <input type="hidden" name="utm_term" value="" />
+    <input type="hidden" name="utm_content" value="" />
+    <input type="hidden" name="yclid" value="" />
+    <input type="hidden" name="gclid" value="" />
+    <input type="hidden" name="client_id" value="" />
+    <input type="hidden" name="page_url" value="" />
+
+
+    <div class={rowClass}>
+      <label for={phoneId} class="sr-only">Телефон</label>
+      <input
+        id={phoneId}
+        type="tel"
+        name="phone"
+        required
+        inputmode="tel"
+        autocomplete="tel"
+        placeholder="+7 (___) ___-__-__"
+        class:list={[
+          'min-w-0 rounded-md border border-line bg-paper px-4 py-3 font-medium outline-none transition-shadow focus:border-accent aria-[invalid=true]:border-danger',
+          layout === 'stacked' ? 'w-full' : 'flex-1 basis-52',
+        ]}
+      />
+      <button
+        type="submit"
+        data-submit
+        class:list={['btn btn-primary shrink-0 px-6 py-3', layout === 'stacked' ? 'w-full' : '']}
+      >
+        {submitLabel}
+      </button>
+    </div>
+
+    {
+      /* Вложения ставим ПОСЛЕ телефона и ДО согласия: телефон — минимально
+         достаточная заявка, файл — необязательное уточнение, и он не должен
+         стоять между посетителем и кнопкой. */
+      allowFiles && <LeadAttachments id={`${phoneId}-files`} note={filesNote} />
+    }
+
+    <label class="lead-consent flex cursor-pointer select-none items-start gap-2.5 text-xs text-muted transition-colors">
+      <input
+        type="checkbox"
+        name="consent"
+        required
+        class="lead-consent-box mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[var(--color-accent)]"
+      />
+      <span>
+        Отправляя заявку, я принимаю
+        <a href="/privacy-policy/" class="underline hover:text-accent">политику конфиденциальности</a>
+        и даю <a href="/soglasie-na-obrabotku-dannykh/" class="underline hover:text-accent"
+          >согласие на обработку персональных данных</a
+        >
+      </span>
+    </label>
+
+    <p
+      data-form-error
+      role="alert"
+      aria-live="assertive"
+      hidden
+      class="m-0 rounded-md bg-danger/10 px-4 py-2 text-sm font-medium text-danger"
+    >
+    </p>
+  </form>
+
+  <!-- Inline success (success='inline': form hidden, this shown) -->
+  <div
+    data-form-success
+    role="status"
+    tabindex="-1"
+    hidden
+    class="flex flex-col items-center gap-2 rounded-lg border border-line bg-surface p-6 text-center outline-none"
+  >
+    <span aria-hidden="true" class="text-3xl leading-none text-success">✓</span>
+    <p class="m-0 font-semibold">Спасибо! Мы свяжемся с вами в ближайшее время.</p>
+  </div>
+</div>
+
+<style>
+  /* Strong red highlight when submitting without consent (cleared on check). */
+  .lead-consent.consent-error {
+    color: var(--color-danger);
+  }
+  .lead-consent.consent-error a {
+    color: inherit;
+  }
+  .lead-consent.consent-error .lead-consent-box {
+    outline: 2px solid var(--color-danger);
+    outline-offset: 2px;
+    animation: consent-nudge 0.45s ease;
+  }
+  @keyframes consent-nudge {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-4px); }
+    60% { transform: translateX(4px); }
+    80% { transform: translateX(-2px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lead-consent.consent-error .lead-consent-box { animation: none; }
+  }
+</style>
+
+<script>
+  import { initLeadForms } from '../../lib/lead-form';
+  initLeadForms();
+  document.addEventListener('astro:page-load', initLeadForms);
+  document.addEventListener('astro:after-swap', initLeadForms);
+</script>

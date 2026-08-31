@@ -1,0 +1,36 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import { formatDate } from '../../lib/utils';
+import ContentImage from '../ui/ContentImage.astro';
+
+interface Props {
+  post: CollectionEntry<'blog'>;
+}
+const { post } = Astro.props;
+const { title, description, date, image, imageAlt, tags } = post.data;
+const href = `/blog/${post.id}/`;
+---
+<article class="card group flex flex-col">
+  <a href={href} class="block aspect-[16/9] overflow-hidden">
+    <ContentImage
+      src={image ?? '/images/placeholder.svg'}
+      alt={imageAlt ?? title}
+      widths={[400, 800]}
+      sizes="(min-width: 768px) 33vw, 100vw"
+      width={800}
+      height={450}
+      class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+    />
+  </a>
+  <div class="flex flex-1 flex-col p-5">
+    <div class="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted">
+      <time datetime={date.toISOString()}>{formatDate(date)}</time>
+      {tags.slice(0, 2).map((t) => <span class="text-accent">#{t}</span>)}
+    </div>
+    <h2 class="text-lg font-semibold leading-snug">
+      <a href={href} class="transition-colors hover:text-accent">{title}</a>
+    </h2>
+    <p class="mt-2 line-clamp-3 flex-1 text-sm text-muted">{description}</p>
+    <a href={href} class="mt-4 text-sm font-medium text-accent">Читать →</a>
+  </div>
+</article>

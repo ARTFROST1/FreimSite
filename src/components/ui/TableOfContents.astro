@@ -1,0 +1,41 @@
+---
+/**
+ * TableOfContents — pure-CSS sticky article TOC, zero JS (pattern from
+ * the catalogue reference).
+ * Feed it Astro's `headings` from a rendered MDX entry:
+ *
+ *   const { Content, headings } = await render(post);
+ *   <TableOfContents headings={headings} />
+ *
+ * Renders h2 + h3 only. Anchor scroll offset is handled globally by
+ * `scroll-padding-top` in global.css.
+ */
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+interface Props {
+  headings: Heading[];
+  title?: string;
+  class?: string;
+}
+const { headings, title = 'Содержание', class: className = '' } = Astro.props;
+const items = headings.filter((h) => h.depth === 2 || h.depth === 3);
+---
+{
+  items.length > 1 && (
+    <nav class={`rounded-xl border border-line bg-surface p-5 ${className}`} aria-label={title}>
+      <p class="eyebrow mb-3">{title}</p>
+      <ol class="space-y-1.5 text-sm">
+        {items.map((h) => (
+          <li class={h.depth === 3 ? 'pl-4' : ''}>
+            <a href={`#${h.slug}`} class="text-muted transition-colors hover:text-accent">
+              {h.text}
+            </a>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  )
+}

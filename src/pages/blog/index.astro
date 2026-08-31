@@ -1,0 +1,17 @@
+---
+/**
+ * /blog/ — первая страница списка. Остальные — /blog/page/N/
+ * (src/pages/blog/page/[page].astro); разметка общая, см. BlogListing.astro.
+ * Нарезка руками (а не paginate()): у этого роута нет [page]-параметра, а
+ * URL первой страницы обязан остаться прежним — /blog/, без /page/1/.
+ */
+import { getCollection } from 'astro:content';
+import BlogListing from '../../components/blog/BlogListing.astro';
+import { BLOG_PAGE_SIZE } from '../../config/site';
+
+const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
+);
+const totalPages = Math.max(1, Math.ceil(posts.length / BLOG_PAGE_SIZE));
+---
+<BlogListing posts={posts.slice(0, BLOG_PAGE_SIZE)} currentPage={1} totalPages={totalPages} />

@@ -1,0 +1,53 @@
+---
+/**
+ * ProductCard — catalog grid tile for a single product. Same shape as
+ * BlogCard (../blog/BlogCard.astro): image + title + copy + link, plus the
+ * isHit/isNew badges from `productSchema` (src/config/schemas.ts).
+ */
+import type { CollectionEntry } from 'astro:content';
+import ContentImage from '../ui/ContentImage.astro';
+
+interface Props {
+  product: CollectionEntry<'products'>;
+  href: string;
+}
+const { product, href } = Astro.props;
+const { title, shortDescription, image, price, isHit, isNew } = product.data;
+---
+<article class="card group flex flex-col">
+  <a href={href} class="relative block aspect-[4/3] overflow-hidden">
+    <ContentImage
+      src={image}
+      alt={title}
+      widths={[320, 480, 640]}
+      sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+      width={640}
+      height={480}
+      class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+    />
+    {(isNew || isHit) && (
+      <div class="absolute left-3 top-3 flex flex-wrap gap-2">
+        {isNew && (
+          <span class="rounded-full bg-accent px-3 py-1 text-xs font-semibold text-accent-ink">
+            Новинка
+          </span>
+        )}
+        {isHit && (
+          <span class="rounded-full bg-ink px-3 py-1 text-xs font-semibold text-paper">
+            Хит
+          </span>
+        )}
+      </div>
+    )}
+  </a>
+  <div class="flex flex-1 flex-col p-5">
+    <h3 class="text-lg font-semibold leading-snug">
+      <a href={href} class="transition-colors hover:text-accent">{title}</a>
+    </h3>
+    <p class="mt-2 line-clamp-2 flex-1 text-sm text-muted">{shortDescription}</p>
+    <div class="mt-4 flex items-center justify-between gap-3">
+      {price ? <span class="text-base font-bold">{price}</span> : <span />}
+      <a href={href} class="text-sm font-medium text-accent">Подробнее →</a>
+    </div>
+  </div>
+</article>

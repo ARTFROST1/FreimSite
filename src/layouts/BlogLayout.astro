@@ -1,0 +1,204 @@
+---
+import { getImage } from 'astro:assets';
+import BaseLayout from './BaseLayout.astro';
+import Breadcrumbs from '../components/seo/Breadcrumbs.astro';
+import JsonLd from '../components/seo/JsonLd.astro';
+import TableOfContents from '../components/ui/TableOfContents.astro';
+import ContentImage from '../components/ui/ContentImage.astro';
+import { articleSchema } from '../lib/schema';
+import { formatDate } from '../lib/utils';
+import { PRIMARY_CTA } from '../config/nav';
+import { asset } from '../lib/images/registry';
+import { classifyImageSource, IMAGE_FALLBACK_URL } from '../lib/images/resolve';
+import { resolveOgImage } from '../lib/og-image';
+import { getEntry } from 'astro:content';
+
+// The end-of-article CTA reuses the site-wide `sections.cta` copy and the
+// header's `navigation.ctaLabel` instead of hardcoding its own strings — one
+// «Финальный призыв к действию» screen in the portal drives every surface.
+const CTA = (await getEntry('sections', 'main'))!.data.cta;
+const NAV = (await getEntry('navigation', 'main'))!.data;
+
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+interface Props {
+  title: string;
+  description: string;
+  date: Date;
+  updated?: Date;
+  image?: string;
+  imageAlt?: string;
+  author?: string;
+  tags?: string[];
+  slug: string;
+  /** Pass `headings` from render(post) to get an automatic table of contents. */
+  headings?: Heading[];
+}
+
+const {
+  title,
+  description,
+  date,
+  updated,
+  image,
+  imageAlt,
+  author,
+  tags = [],
+  slug,
+  headings = [],
+} = Astro.props;
+
+const url = `/blog/${slug}/`;
+const crumbs = [
+  { name: 'Главная', url: '/' },
+  { name: 'Блог', url: '/blog/' },
+  { name: title },
+];
+
+/**
+ * `og:image`/JSON-LD `image` уходят через `absoluteUrl` (просто клеит домен
+ * спереди), поэтому им нужен настоящий адрес файла, а не ключ реестра
+ * (`blog/cover.webp`) — иначе получаем 404 у соцсетей и краулеров. На саму
+ * страницу `image` по-прежнему идёт как есть — `<ContentImage>` резолвит его
+ * сам. Тот же no-throw принцип: сломанная картинка не должна ронять сборку.
+ */
+async function resolveSocialImage(src: string | undefined): Promise<string | undefined> {
+  if (!src) return undefined;
+  const classified = classifyImageSource(src, asset);
+  if (classified.kind === 'url') return classified.url;
+  if (classified.kind === 'svg') return classified.img.src;
+  try {
+    const optimized = await getImage({ src: classified.img, width: Math.min(classified.img.width, 1200), format: 'webp' });
+    return optimized.src;
+  } catch (err) {
+    console.warn(`[images] не удалось подготовить og:image из ${src} — рендерю ${IMAGE_FALLBACK_URL}`, err);
+    return IMAGE_FALLBACK_URL;
+  }
+}
+
+const socialImage = await resolveSocialImage(image);
+const schema = articleSchema({
+  title,
+  description,
+  url,
+  image: socialImage,
+  datePublished: date,
+  dateModified: updated ?? date,
+  author,
+});
+
+/**
+ * `og:image` — отдельный кадр (JPEG, честные width/height), а не то же
+ * WebP-изображение произвольного размера, что уходит в JSON-LD выше: соцсети
+ * сверяют og:image:width/height с реально загруженным файлом (см.
+ * `src/lib/og-image.ts`), а JSON-LD `image` такой проверке не подвергается.
+ */
+const og = await resolveOgImage(image);
+---
+<BaseLayout
+  title={`${title} — Блог`}
+  description={description}
+  ogType="article"
+  ogImage={og.src}
+  ogImageWidth={og.width}
+  ogImageHeight={og.height}
+  ogImageAlt={imageAlt ?? title}
+  breadcrumbs={crumbs}
+>
+  <JsonLd slot="head" schema={schema} />
+
+  <article class="container-page max-w-3xl py-12 md:py-16">
+    <Breadcrumbs items={crumbs} class="mb-6" />
+
+    <header class="mb-8">
+      <div class="mb-3 flex flex-wrap items-center gap-3 text-sm text-muted">
+        <time datetime={date.toISOString()}>{formatDate(date)}</time>
+        {tags.length > 0 && <span class="text-line">•</span>}
+        {tags.map((t) => <span class="text-accent">#{t}</span>)}
+      </div>
+      <h1 class="text-3xl font-bold md:text-4xl">{title}</h1>
+      <p class="mt-4 text-lg text-muted">{description}</p>
+    </header>
+
+    {
+      image && (
+        <ContentImage
+          src={image}
+          alt={imageAlt ?? title}
+          widths={[640, 1024, 1200]}
+          sizes="(min-width: 768px) 768px, 100vw"
+          width={1200}
+          height={630}
+          class="mb-10 w-full rounded-lg border border-line"
+          loading="eager"
+        />
+      )
+    }
+
+    {headings.length > 0 && <TableOfContents headings={headings} class="mb-10" />}
+
+    <div class="blog-prose">
+      <slot />
+    </div>
+
+    <!-- End-of-article commercial CTA -->
+    <aside class="mt-14 rounded-xl border border-line bg-surface p-8 text-center">
+      <h2 class="text-2xl font-bold" data-cms="sections::cta.title">{CTA.title}</h2>
+      <p class="mx-auto mt-3 max-w-lg text-muted" data-cms="sections::cta.subtitle">{CTA.subtitle}</p>
+      <a
+        href={PRIMARY_CTA.href}
+        class="btn btn-primary mt-6"
+        data-goal="cta_click"
+        data-goal-source="blog_article"
+      >
+        <span data-cms="navigation::ctaLabel">{NAV.ctaLabel}</span>
+      </a>
+    </aside>
+  </article>
+</BaseLayout>
+
+<style>
+  /* Scoped typographic styles for MDX article body (no plugin dependency). */
+  .blog-prose :global(h2) {
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+  }
+  .blog-prose :global(h3) {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+  }
+  .blog-prose :global(p) {
+    margin-bottom: 1.25rem;
+  }
+  .blog-prose :global(ul),
+  .blog-prose :global(ol) {
+    margin: 1.25rem 0;
+    padding-left: 1.5rem;
+    list-style: revert;
+  }
+  .blog-prose :global(li) {
+    margin-bottom: 0.5rem;
+  }
+  .blog-prose :global(a) {
+    color: var(--color-accent);
+    text-decoration: underline;
+  }
+  .blog-prose :global(img) {
+    border-radius: var(--radius-md);
+    margin: 1.5rem 0;
+  }
+  .blog-prose :global(blockquote) {
+    border-left: 3px solid var(--color-accent);
+    padding-left: 1rem;
+    color: var(--color-muted);
+    font-style: italic;
+    margin: 1.5rem 0;
+  }
+</style>

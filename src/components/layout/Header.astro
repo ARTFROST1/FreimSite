@@ -1,0 +1,374 @@
+---
+import { SITE } from '../../config/site';
+import { NAV_MAIN, PRIMARY_CTA } from '../../config/nav';
+import { phoneHref } from '../../lib/utils';
+import { getEntry } from 'astro:content';
+
+interface Props {
+  /**
+   * Прячет шапку при скролле вниз, показывает при скролле вверх (портировано
+   * с боевого проекта, Header.astro:591-614). Дефолт false — стартер не навязывает
+   * эту механику всем сайтам: на коротких лендингах с шапкой-CTA она только
+   * мешает. Включать явно: `<Header autoHide />`.
+   */
+  autoHide?: boolean;
+  /**
+   * Подсвечивает текущий раздел меню при скролле по якорным ссылкам
+   * (боевой проект, Header.astro:665-717). Дефолт false — у NAV_MAIN пункты по
+   * умолчанию ведут на отдельные страницы (`/about/`, `/katalog/`…), там
+   * подсвечивать нечего; включайте на one-page-лендингах, где меню состоит
+   * из якорей `#section`.
+   */
+  scrollSpy?: boolean;
+}
+const { autoHide = false, scrollSpy = false } = Astro.props;
+
+// Client-editable labels; hrefs stay structural in NAV_MAIN/PRIMARY_CTA above.
+const NAV = (await getEntry('navigation', 'main'))!.data;
+---
+<header
+  id="site-header"
+  class="fixed inset-x-0 top-0 z-50 border-b border-line bg-paper/85 backdrop-blur-md transition-all"
+  data-auto-hide={String(autoHide)}
+  data-scroll-spy={String(scrollSpy)}
+>
+  <div class="container-page flex items-center justify-between py-4 transition-all" data-header-inner>
+    <a href="/" class="font-heading text-lg font-bold tracking-tight" aria-label={SITE.name}>
+      {SITE.shortName}
+    </a>
+
+    <!-- Desktop nav -->
+    <nav class="hidden items-center gap-7 text-sm lg:flex" aria-label="Основная навигация" data-hdr-nav>
+      {
+        NAV_MAIN.map((item) => (
+          <a href={item.href} class="text-muted transition-colors hover:text-accent">
+            <span data-cms={`navigation::menu.${item.id}`}>{NAV.menu[item.id]}</span>
+          </a>
+        ))
+      }
+    </nav>
+
+    <div class="flex items-center gap-3">
+      <a
+        href={`tel:${phoneHref(SITE.contact.phoneRaw)}`}
+        class="hidden text-sm text-muted transition-colors hover:text-accent md:block"
+        data-goal="phone_click"
+        data-goal-source="header"
+        data-cms="navigation::phone"
+        data-fd-attr="href"
+        data-fd-attr-template="tel:{value}"
+      >
+        <span data-cms="navigation::phone">{NAV.phone}</span>
+      </a>
+      <a
+        href={PRIMARY_CTA.href}
+        class="btn btn-primary hidden px-5 py-2.5 text-sm lg:inline-flex"
+        data-goal="cta_click"
+        data-goal-source="header"
+      >
+        <span data-cms="navigation::ctaLabel">{NAV.ctaLabel}</span>
+      </a>
+
+      <!-- Burger -->
+      <button
+        id="burger"
+        class="flex h-10 w-10 flex-col items-center justify-center gap-1.5 lg:hidden"
+        aria-label="Открыть меню"
+        aria-expanded="false"
+        aria-controls="mobile-menu"
+      >
+        <span class="block h-0.5 w-6 bg-ink transition-all" data-line></span>
+        <span class="block h-0.5 w-6 bg-ink transition-all" data-line></span>
+        <span class="block h-0.5 w-6 bg-ink transition-all" data-line></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Mobile menu -->
+  <div id="mobile-menu" class="grid grid-rows-[0fr] overflow-hidden border-line transition-all duration-300 lg:hidden">
+    <div class="min-h-0">
+      <nav class="container-page flex flex-col gap-4 border-t border-line py-6 text-base">
+        {
+          NAV_MAIN.map((item) => (
+            <a href={item.href} class="mobile-link transition-colors hover:text-accent">
+              <span data-cms={`navigation::menu.${item.id}`}>{NAV.menu[item.id]}</span>
+            </a>
+          ))
+        }
+        <a
+          href={PRIMARY_CTA.href}
+          class="btn btn-primary mobile-link mt-2 self-start"
+          data-goal="cta_click"
+          data-goal-source="header_mobile"
+        >
+          <span data-cms="navigation::ctaLabel">{NAV.ctaLabel}</span>
+        </a>
+      </nav>
+    </div>
+  </div>
+</header>
+<!-- Spacer so fixed header never overlaps content. Height tracks --hdr-h
+     (synced from the header's real, measured height below) instead of a
+     hardcoded px guess — the burger→mobile-menu row and any future CMS
+     content that changes header height keep the spacer honest. -->
+<div aria-hidden="true" class="h-[var(--hdr-h,5rem)]"></div>
+
+<style>
+  /* Автоскрытие (проп autoHide) — контракт: скрипт ниже всегда ставит класс
+     `hdr-away` на #site-header, когда механика включена и условия совпали;
+     что он красит — решает CSS. Дефолт ниже просто уводит шапку вверх;
+     переопределите здесь или в global.css, если нужен другой эффект. */
+  #site-header.hdr-away {
+    transform: translateY(-100%);
+  }
+
+  /* Скролл-спай (проп scrollSpy) — минимальная подсветка текущего пункта
+     меню; переопределяйте под свой дизайн при необходимости. */
+  #site-header nav a.is-current,
+  #mobile-menu a.is-current {
+    color: var(--color-accent);
+  }
+</style>
+
+<!--
+  Канон "бандл по умолчанию, is:inline — только для verbatim" (PERFORMANCE.md
+  §8): здесь остаётся ТОЛЬКО то, что обязано отработать до первой отрисовки
+  — класс `no-hero` на <html> и первичная установка `--hdr-h` (от неё зависит
+  `scroll-padding-top` и высота спейсера под шапкой; затяни расчёт — страница
+  дёрнется). Всё остальное (бургер/меню, сжатие и автоскрытие при скролле,
+  скролл-спай) — в обычном (бандлируемом, типизируемом) `<script>` ниже: оно
+  не влияет на первый кадр, а инлайн-версия этой логики на боевом проекте
+  раздувала HTML-документ каталога до 37% его сжатого веса.
+
+  Дожидаемся DOMContentLoaded (а не вызываем синхронно в момент парсинга):
+  на страницах, где hero лежит в разметке НИЖЕ Header (обычный порядок —
+  <Header/> первым), парсер в момент выполнения этого тега ещё не дошёл до
+  hero — `document.querySelector('#hero, ...')` вернул бы false для страниц,
+  где hero есть. DOMContentLoaded гарантирует, что весь документ уже
+  распарсен; astro:page-load даёт то же самое после SPA-свопа (там весь
+  новый <body>, включая hero, уже на месте целиком).
+-->
+<script is:inline>
+  (function () {
+    function syncBeforePaint() {
+      var header = document.getElementById('site-header');
+      if (!header) return;
+      var hasHero = !!document.querySelector('#hero, .hero, [data-hero]');
+      document.documentElement.classList.toggle('no-hero', !hasHero);
+      var h = header.getBoundingClientRect().height;
+      document.documentElement.style.setProperty('--hdr-h', Math.round(h) + 'px');
+    }
+    document.addEventListener('DOMContentLoaded', syncBeforePaint);
+    document.addEventListener('astro:page-load', syncBeforePaint);
+  })();
+</script>
+
+<script>
+  // Не-критичная для первого кадра механика шапки: бургер/мобильное меню,
+  // сжатие при скролле, автоскрытие (autoHide) и скролл-спай (scrollSpy).
+  // Пропы читаются из data-атрибутов на #site-header (define:vars требует
+  // is:inline — см. MobileStickyCTA.astro, тот же приём с data-hero-selector),
+  // а не из замыкания, потому что этот файл — общий бандл-чанк на все
+  // страницы, а не встроенный в каждый документ текст.
+  //
+  // SPA-safe по канону animations-motion.md §2:
+  //   A. document-уровневые синглтоны — обёрнуты repoint-паттерном ниже
+  //      (не одноразовым guard-флагом: тело замыкает пер-страничные узлы).
+  //   B. пер-страничная привязка (бургер/меню) — на каждую навигацию,
+  //      гард на самом узле (`dataset.bound`), т.к. узел всегда свежий
+  //      после свапа <body>.
+  //   C. таймеры/обсерверы — снимаются перед перевзведением.
+  // Модуль (в отличие от is:inline) выполняется один раз за жизнь вкладки,
+  // поэтому module-scope переменные ниже (аналог MobileStickyCTA.astro)
+  // переживают SPA-навигации без доп. guard-флагов на window.
+
+  let scrollHandler: (() => void) | null = null;
+  let resizeHandler: (() => void) | null = null;
+  let outsideClickHandler: ((e: MouseEvent) => void) | null = null;
+  let spyObserver: IntersectionObserver | null = null;
+
+  function teardownHeaderListeners(): void {
+    if (scrollHandler) {
+      window.removeEventListener('scroll', scrollHandler);
+      scrollHandler = null;
+    }
+    if (resizeHandler) {
+      window.removeEventListener('resize', resizeHandler);
+      resizeHandler = null;
+    }
+    if (outsideClickHandler) {
+      document.removeEventListener('click', outsideClickHandler);
+      outsideClickHandler = null;
+    }
+    if (spyObserver) {
+      spyObserver.disconnect();
+      spyObserver = null;
+    }
+  }
+  // ClientRouter меняет <body> целиком — без явной чистки перед следующей
+  // навигацией scroll/resize-слушатели и IntersectionObserver держали бы
+  // замыкание на узлы уходящей страницы (см. MobileStickyCTA.astro).
+  document.addEventListener('astro:before-swap', teardownHeaderListeners);
+
+  function syncHdrH(header: HTMLElement): void {
+    var h = header.getBoundingClientRect().height;
+    document.documentElement.style.setProperty('--hdr-h', Math.round(h) + 'px');
+  }
+
+  function initHeaderBehavior(): void {
+    const header = document.getElementById('site-header');
+    const burger = document.getElementById('burger');
+    const menu = document.getElementById('mobile-menu');
+    if (!header || !burger || !menu) return;
+    const inner = header.querySelector<HTMLElement>('[data-header-inner]');
+
+    const autoHide = header.dataset.autoHide === 'true';
+    const scrollSpy = header.dataset.scrollSpy === 'true';
+
+    // Снимаем всё, что осталось от предыдущей страницы (window-слушатели,
+    // click-вовне, spy-обсёрвер), ДО того как заведём новые — иначе ниже
+    // мы тут же затёрли бы только что созданный outsideClickHandler.
+    teardownHeaderListeners();
+
+    // Бургер/мобильное меню — гард на самом узле: узел всегда свежий после
+    // SPA-свопа, поэтому "уже привязано" не переживает навигацию само по
+    // себе, но подавляет двойную привязку в рамках одной страницы.
+    const lines = burger.querySelectorAll<HTMLElement>('[data-line]');
+    let open = false;
+    function set(state: boolean): void {
+      open = state;
+      menu!.style.gridTemplateRows = open ? '1fr' : '0fr';
+      burger!.setAttribute('aria-expanded', String(open));
+      // Контракт: пока меню открыто, на <body> висит `menu-open`. Подписан
+      // остров `MobileStickyCTA` (прячется, чтобы не спорить за внимание с
+      // открытым меню — см. его doc-comment); `CookieConsent` — сознательно
+      // нет: баннер и открытое меню друг другу не конфликтуют по месту на
+      // экране. Любой новый компонент может опереться на этот класс так же;
+      // ниже на нём же держится блокировка автоскрытия шапки (в открытом
+      // меню есть крестик закрытия — шапка обязана быть на месте).
+      document.body.classList.toggle('menu-open', open);
+      if (open) header!.classList.remove('hdr-away');
+      if (lines.length === 3) {
+        lines[0]!.style.transform = open ? 'translateY(8px) rotate(45deg)' : '';
+        lines[1]!.style.opacity = open ? '0' : '1';
+        lines[2]!.style.transform = open ? 'translateY(-8px) rotate(-45deg)' : '';
+      }
+    }
+
+    if (!burger.dataset.bound) {
+      burger.dataset.bound = '1';
+      burger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        set(!open);
+      });
+      menu.querySelectorAll('a').forEach((a) => {
+        a.addEventListener('click', () => set(false));
+      });
+    }
+
+    // Клик вовне закрывает меню — document-уровневый слушатель. Старый (с
+    // прошлой страницы) уже снят вызовом teardownHeaderListeners() выше;
+    // без этого repoint'а на каждой SPA-навигации копился бы ещё один такой
+    // обработчик, замыкающий давно отсоединённые header/open/set (на боевом
+    // проекте Header.astro с этим не сталкивается — ClientRouter специфичен для
+    // Astro; унаследованный из базового шаблона гард `burger.dataset.bound`
+    // от этой утечки не защищал, т.к. он про сам burger-узел, а не про
+    // document-уровневый слушатель).
+    outsideClickHandler = (e) => {
+      if (open && !header.contains(e.target as Node)) set(false);
+    };
+    document.addEventListener('click', outsideClickHandler);
+
+    // Автоскрытие при скролле вниз (боевой проект, Header.astro:591-614): аккумулятор
+    // направления с порогом 6px гасит дрожание от микро-движений пальца
+    // (простое сравнение dy>0 так не умеет); ниже 240px (первый экран и его
+    // окрестности) шапка не прячется — иначе мигала бы в самом начале
+    // страницы. Полностью за пропом autoHide — дефолт false, поведение
+    // стартера не меняется.
+    let lastY = window.scrollY;
+    let accum = 0;
+    function setAway(on: boolean): void {
+      if (on && document.body.classList.contains('menu-open')) return;
+      header!.classList.toggle('hdr-away', on);
+    }
+    function onScrollAway(): void {
+      const y = window.scrollY;
+      const dy = y - lastY;
+      lastY = y;
+      if (y < 240) {
+        accum = 0;
+        setAway(false);
+        return;
+      }
+      accum = (accum > 0 && dy > 0) || (accum < 0 && dy < 0) ? accum + dy : dy;
+      if (accum > 6) setAway(true);
+      else if (accum < -6) setAway(false);
+    }
+
+    // Shrink header on scroll + автоскрытие — один обработчик; `inner` выше
+    // — свежий узел после SPA-свопа (замыкание пересоздаётся при каждом
+    // initHeaderBehavior, старое снято тем же teardownHeaderListeners()
+    // в начале функции).
+    scrollHandler = () => {
+      if (inner) {
+        if (window.scrollY > 60) inner.classList.replace('py-4', 'py-2');
+        else inner.classList.replace('py-2', 'py-4');
+      }
+      if (autoHide) onScrollAway();
+    };
+    window.addEventListener('scroll', scrollHandler, { passive: true });
+
+    resizeHandler = () => syncHdrH(header);
+    window.addEventListener('resize', resizeHandler, { passive: true });
+
+    // Скролл-спай (боевой проект, Header.astro:665-717) — подсвечивает пункт меню
+    // (шапка + мобильное меню), чей якорь ближе всего к верху под фикс-
+    // хедером. За пропом scrollSpy — по умолчанию выключен.
+    if (scrollSpy && typeof IntersectionObserver !== 'undefined') {
+      const navLinks = Array.from(
+        document.querySelectorAll<HTMLAnchorElement>(
+          '[data-hdr-nav] a[href*="#"], #mobile-menu a[href*="#"]',
+        ),
+      );
+      const idToSection: Record<string, HTMLElement> = {};
+      const ids: string[] = [];
+      navLinks.forEach((a) => {
+        const id = (a.getAttribute('href') || '').split('#')[1];
+        if (!id || idToSection[id]) return;
+        const el = document.getElementById(id);
+        if (el) {
+          idToSection[id] = el;
+          ids.push(id);
+        }
+      });
+      if (ids.length) {
+        function setCurrent(id: string): void {
+          navLinks.forEach((a) => {
+            const linkId = (a.getAttribute('href') || '').split('#')[1];
+            const isCurrent = linkId === id;
+            a.classList.toggle('is-current', isCurrent);
+            if (isCurrent) a.setAttribute('aria-current', 'true');
+            else a.removeAttribute('aria-current');
+          });
+        }
+        const hdrH = header.getBoundingClientRect().height;
+        spyObserver = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              if (entry.isIntersecting) setCurrent(entry.target.id);
+            });
+          },
+          { rootMargin: '-' + Math.round(hdrH + 8) + 'px 0px -70% 0px', threshold: 0 },
+        );
+        ids.forEach((id) => spyObserver!.observe(idToSection[id]!));
+      }
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initHeaderBehavior, { once: true });
+  } else {
+    initHeaderBehavior();
+  }
+  document.addEventListener('astro:page-load', initHeaderBehavior);
+</script>

@@ -1,0 +1,131 @@
+---
+/**
+ * ProductJsonLd — Product structured data for a catalog item page, routed
+ * through the template's `JsonLd` wrapper (→ `serializeJsonLd`, see
+ * src/lib/json-ld.ts) instead of a raw `JSON.stringify`.
+ *
+ * MERCHANT-READY (товарные галереи Яндекса и Google): sku / категория /
+ * характеристики выводятся всегда, а `offers` (цена, наличие, доставка,
+ * возврат) — только когда у товара заполнено поле `price`. Пока цен нет,
+ * схема остаётся валидным Product без оффера; как только цена появится в
+ * контенте, товар автоматически становится кандидатом в товарную галерею —
+ * код трогать не нужно. Тот же принцип, что у фидов (src/lib/feeds.ts).
+ *
+ * Deliberately NO aggregateRating/review: fabricating per-product review data
+ * is a Google manual-action risk (structured-data spam). A real, on-page
+ * aggregate rating belongs on LocalBusiness only — see
+ * src/lib/schema.ts `localBusinessSchema`.
+ */
+import JsonLd from './JsonLd.astro';
+import { SITE, absoluteUrl } from '../../config/site';
+import { FEEDS, schemaAvailability } from '../../config/feeds';
+import { ORG_ID } from '../../lib/schema';
+import { parsePrice } from '../../lib/price';
+
+interface Props {
+  name: string;
+  description: string;
+  /** Absolute or site-relative image URLs — resolve registry keys to their
+   *  final built URL before passing them in. */
+  image: string[];
+  url: string;
+  /** Сквозной артикул товара (идентификатор в CRM/учётной системе). */
+  sku?: string;
+  /** Название категории человекочитаемой строкой («Пластиковые окна»). */
+  category?: string;
+  /** Характеристики товара парами «метка → значение». */
+  specs?: { label: string; value: string }[];
+  /** Цена в свободном формате из фронтматтера («от 12 500 ₽»); первое число
+   *  становится ценой оффера. Пусто/не разобралось → offers не эмитится. */
+  price?: string;
+  brand?: string;
+}
+const { name, description, image, url, sku, category, specs = [], price, brand } = Astro.props;
+
+// «от 12 500 ₽» → 12500 (см. lib/price.ts). Без числа — нет и оффера:
+// схема не имеет права выдумывать цену.
+const priceValue = parsePrice(price);
+
+/**
+ * AggregateOffer + lowPrice, а НЕ Offer + price — сознательный выбор под
+ * модель «цена от». Когда товар делается по размерам заказчика,
+ * фиксированной цены у него нет, и оба поисковика документируют ровно этот
+ * способ отдать вилку:
+ *   • Яндекс: «При использовании lowPrice цена в сниппете отображается как
+ *     „от N руб“. Рекомендуем указывать минимальную цену, если у товара нет
+ *     фиксированной цены и она зависит от объёма, размера или других
+ *     параметров».
+ *   • Google: для product snippet (случай «на странице нельзя купить»)
+ *     AggregateOffer разрешён наравне с Offer.
+ * Одна схема закрывает обе системы. Если у вас твёрдый прайс и корзина —
+ * меняйте на `{'@type': 'Offer', price: priceValue}`.
+ *
+ * `availability` берём из FEEDS (PreOrder для производства на заказ, InStock
+ * для склада) — то же утверждение, что уходит в товарные фиды: расхождение
+ * между разметкой и фидом поисковики трактуют не в нашу пользу.
+ * ⚠️ После выкатки проверьте живой сниппет Яндекса: если он перестанет
+ * показывать цену из-за «нет в наличии», для Яндекса возвращают InStock, а
+ * срок изготовления пишут явно на странице.
+ *
+ * `priceValidUntil` НЕ ставим намеренно: поле необязательное, а просроченная
+ * дата тихо убивает товарный сниппет — самая частая причина «звёзды были и
+ * пропали».
+ */
+const offers = priceValue
+  ? {
+      '@type': 'AggregateOffer',
+      url: absoluteUrl(url),
+      lowPrice: priceValue,
+      priceCurrency: FEEDS.currency,
+      offerCount: 1,
+      availability: schemaAvailability(),
+      itemCondition: 'https://schema.org/NewCondition',
+      seller: { '@id': ORG_ID },
+      shippingDetails: {
+        '@type': 'OfferShippingDetails',
+        shippingDestination: { '@type': 'DefinedRegion', addressCountry: FEEDS.countryCode },
+      },
+      // Политика возврата — юридический факт проекта, см. src/config/feeds.ts.
+      // Дефолт стартера — MerchantReturnNotPermitted: товар надлежащего
+      // качества, изготовленный по индивидуальному заказу, возврату не
+      // подлежит (в РФ — перечень, утв. ПП РФ № 2463).
+      hasMerchantReturnPolicy: {
+        '@type': 'MerchantReturnPolicy',
+        applicableCountry: FEEDS.returnPolicy.applicableCountry,
+        returnPolicyCategory: FEEDS.returnPolicy.returnPolicyCategory,
+        ...(FEEDS.returnPolicy.merchantReturnDays > 0
+          ? { merchantReturnDays: FEEDS.returnPolicy.merchantReturnDays }
+          : {}),
+      },
+    }
+  : undefined;
+
+const schema: Record<string, unknown> = {
+  '@context': 'https://schema.org',
+  '@type': 'Product',
+  name,
+  description,
+  image: image.map((src) => absoluteUrl(src)),
+  url: absoluteUrl(url),
+  // Бренд по умолчанию = сам сайт: у производителя товарного мультибренда нет.
+  // Перепродавец передаёт настоящего вендора через проп `brand`.
+  brand: { '@type': 'Brand', name: brand ?? SITE.name },
+  manufacturer: { '@id': ORG_ID },
+  // Артикул уходит и в `sku`, и в `mpn`: пара «brand + mpn» закрывает
+  // требование идентификатора товара там, где GTIN нет и быть не может —
+  // производитель вправе использовать собственный артикул в роли MPN.
+  ...(sku ? { sku, mpn: sku } : {}),
+  ...(category ? { category } : {}),
+  ...(specs.length
+    ? {
+        additionalProperty: specs.map((s) => ({
+          '@type': 'PropertyValue',
+          name: s.label,
+          value: s.value,
+        })),
+      }
+    : {}),
+  ...(offers ? { offers } : {}),
+};
+---
+<JsonLd schema={schema} />

@@ -1,0 +1,139 @@
+---
+/**
+ * Fixed bottom CTA bar on mobile: phone + primary CTA button.
+ *
+ * Показ завязан на hero (портировано с боевого проекта MobileStickyCTA.astro,
+ * задача W2-G), а не на «проскроллили 60% экрана»: пока `heroSelector`
+ * (дефолт покрывает и `HeroSection.astro` стартера — там `id="hero"` — и
+ * произвольные лендинги через `class="hero"`/`data-hero`) хоть частично во
+ * вьюпорте, бар скрыт — незачем спорить с героем за внимание; как только
+ * hero ушёл наверх, бар остаётся видимым до конца страницы. На страницах
+ * БЕЗ hero (heroSelector ничего не находит) бар виден сразу — тот же
+ * безопасный дефолт, что и без JS: лид-CTA не должен зависеть от скрипта.
+ *
+ * Anti-flash: синхронный инлайн-скрипт ставит скрывающий класс ДО того, как
+ * успеет отработать IntersectionObserver ниже (второй `<script>` — модуль,
+ * он всегда выполняется позже инлайнового) — без этого на страницах с hero
+ * бар на долю секунды мелькнул бы полностью видимым.
+ *
+ * SPA-safe: наблюдатель живёт в module scope (тот же паттерн, что
+ * `ScrollScene.astro`/YandexMap.astro) — `astro:before-swap` отключает его
+ * ПЕРЕД тем, как `astro:page-load` создаст новый на следующей странице,
+ * иначе на каждой View Transitions-навигации накапливались бы дублирующие
+ * наблюдатели за одним и тем же hero.
+ */
+import { PRIMARY_CTA } from '../../config/nav';
+import { SITE } from '../../config/site';
+import { phoneHref } from '../../lib/utils';
+import { getEntry } from 'astro:content';
+
+interface Props {
+  /** CSS-селектор hero-секции, за которой прячется бар. */
+  heroSelector?: string;
+}
+const { heroSelector = '#hero, .hero, [data-hero]' } = Astro.props;
+
+// The button label is client-editable (`navigation.ctaLabel`) — the same field
+// the header renders, so renaming the CTA in the portal changes it everywhere.
+// PRIMARY_CTA.href stays structural in config/nav.ts.
+const NAV = (await getEntry('navigation', 'main'))!.data;
+---
+<div id="mobile-cta" class="mobile-cta lg:hidden" data-hero-selector={heroSelector}>
+  <div class="flex items-center gap-3">
+    <a
+      href={`tel:${phoneHref(SITE.contact.phoneRaw)}`}
+      class="btn btn-outline flex-1 py-3 text-sm"
+      data-goal="phone_click"
+      data-goal-source="mobile_cta"
+      data-cms="navigation::phone"
+      data-fd-attr="href"
+      data-fd-attr-template="tel:{value}"
+    >
+      Позвонить
+    </a>
+    <a
+      href={PRIMARY_CTA.href}
+      class="btn btn-primary flex-1 py-3 text-sm"
+      data-goal="cta_click"
+      data-goal-source="mobile_cta"
+    >
+      <span data-cms="navigation::ctaLabel">{NAV.ctaLabel}</span>
+    </a>
+  </div>
+</div>
+
+<!-- Синхронно, до того как отработает IntersectionObserver ниже: если на
+     странице есть hero — бар стартует скрытым, иначе он мелькнул бы видимым
+     до инициализации наблюдателя. no-JS этот скрипт не выполняет → бар
+     виден (безопасный дефолт для лид-CTA). -->
+<script is:inline define:vars={{ heroSelector }}>
+  (function () {
+    if (document.querySelector(heroSelector)) {
+      var cta = document.getElementById('mobile-cta');
+      if (cta) cta.classList.add('mcta-hidden');
+    }
+  })();
+</script>
+
+<script>
+  // Показ бара после hero: пока hero хоть частично во вьюпорте — бар скрыт.
+  let ctaObserver: IntersectionObserver | null = null;
+
+  function killCtaObserver(): void {
+    if (ctaObserver) {
+      ctaObserver.disconnect();
+      ctaObserver = null;
+    }
+  }
+  document.addEventListener('astro:before-swap', killCtaObserver);
+
+  function initCta(): void {
+    killCtaObserver();
+    const cta = document.getElementById('mobile-cta');
+    if (!cta) return;
+    const selector = cta.dataset.heroSelector || '#hero, .hero, [data-hero]';
+    const hero = document.querySelector(selector);
+    if (!hero || typeof IntersectionObserver === 'undefined') {
+      // страницы без hero (или без поддержки IntersectionObserver) — бар виден сразу
+      cta.classList.remove('mcta-hidden');
+      return;
+    }
+    cta.classList.add('mcta-hidden'); // на случай SPA-перехода на страницу с hero
+    ctaObserver = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry) cta.classList.toggle('mcta-hidden', entry.isIntersecting);
+      },
+      { threshold: 0 },
+    );
+    ctaObserver.observe(hero);
+  }
+
+  // ЗАПУСК: не только `astro:page-load` — на ПЕРВИЧНОЙ загрузке ClientRouter
+  // диспатчит его по `window.load` (после картинок/шрифтов/сторонних
+  // скриптов), то есть с задержкой, за которую человек на медленной сети
+  // успевает проскроллить мимо hero ДО того, как наблюдатель вообще
+  // появится — тот же баг, что был у YandexMap.astro (см. его doc-comment
+  // «ЗАПУСК» — идентичный фикс: стартуем по готовности DOM, а
+  // `astro:page-load` оставляем для SPA-переходов). Двойной вызов на
+  // первичной загрузке безопасен: `initCta()` сам снимает старый наблюдатель
+  // перед тем, как завести новый.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initCta, { once: true });
+  } else {
+    initCta();
+  }
+  document.addEventListener('astro:page-load', initCta);
+</script>
+
+<style>
+  /* Форвард-контракт `menu-open` на <body> (см. doc-comment в Header.astro):
+     пока открыто мобильное меню, остров прячется тем же приёмом, что и
+     `.mcta-hidden` от IntersectionObserver выше — не спорит за внимание с
+     открытым меню. Чистое CSS-правило, независимое от JS-состояния hero:
+     что бы ни показал наблюдатель, menu-open перекрывает его по каскаду
+     (тот же селектор `.mobile-cta`, добавлен позже в источнике). */
+  body.menu-open .mobile-cta {
+    transform: translateY(110%);
+  }
+</style>

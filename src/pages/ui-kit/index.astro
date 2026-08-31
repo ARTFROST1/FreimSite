@@ -1,0 +1,596 @@
+---
+/**
+ * /ui-kit/ — служебная витрина компонентов стартера.
+ *
+ * ЭТО НЕ СТРАНИЦА САЙТА. Все секции, примитивы и оверлеи стартера со всеми
+ * вариантами на одном экране — чтобы при сборке сайта по прототипу выбирать
+ * блоки глазами, а при ручной QA проверять их разом. Поэтому:
+ *   • noindex (BaseLayout) + исключение из sitemap (astro.config.mjs);
+ *     robots.txt не трогаем — noindex + отсутствие в карте достаточно;
+ *   • секции с коллекциями читают контент сами (features/team/reviews/…) и
+ *     монтируются с ДЕФОЛТНЫМ cmsScope — это витрина, а не клиентская
+ *     страница, рот-гвард `annotations.test.ts` проверяет только свои карты
+ *     роутов (главная, about/contacts/gallery, каталог), /ui-kit/ туда не
+ *     входит;
+ *   • секции с `id`-пропом при повторном монтировании получают свои id
+ *     (`stats-cards`, `team-row`…), у LeadSection — свой `anchorId` и
+ *     `source` (от него зависят id полей формы);
+ *   • картинки демо — реальные ассеты из `src/assets/` по ключам реестра
+ *     (`lib/images/registry.ts`), без новых файлов.
+ *
+ * Каждый блок подписан `.kit-label` с именем компонента и значением варианта —
+ * строку можно копировать в страницу проекта как есть.
+ *
+ * LCP: единственный eager-кандидат — картинка ПЕРВОГО героя (`split`).
+ * ⚠️ `HeroSection` ставит `loading="eager"` своей картинке во всех
+ * раскладках, поэтому третий герой (`cover`) на витрине тоже eager — это
+ * ограничение компонента (у него нет пропа приоритета), на клиентской
+ * странице герой всегда один и проблемы нет.
+ */
+import { getImage } from 'astro:assets';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import SilhouetteSprite from '../../components/common/SilhouetteSprite.astro';
+import Lightbox from '../../components/common/Lightbox.astro';
+import Modal from '../../components/common/Modal.astro';
+import Toast from '../../components/common/Toast.astro';
+import ContentImage from '../../components/ui/ContentImage.astro';
+import { asset } from '../../lib/images/registry';
+
+// ── Секции ──
+import PageHero from '../../components/sections/PageHero.astro';
+import HeroSection from '../../components/sections/HeroSection.astro';
+import FeaturesSection from '../../components/sections/FeaturesSection.astro';
+import StatsSection from '../../components/sections/StatsSection.astro';
+import IntroSection from '../../components/sections/IntroSection.astro';
+import LogosSection from '../../components/sections/LogosSection.astro';
+import StackedShowcase from '../../components/sections/StackedShowcase.astro';
+import GallerySection from '../../components/sections/GallerySection.astro';
+import TeamSection from '../../components/sections/TeamSection.astro';
+import TimelineSection from '../../components/sections/TimelineSection.astro';
+import StepsSection from '../../components/sections/StepsSection.astro';
+import SituationsSection from '../../components/sections/SituationsSection.astro';
+import ReviewsSection from '../../components/sections/ReviewsSection.astro';
+import PricingSection from '../../components/sections/PricingSection.astro';
+import LeadSection from '../../components/sections/LeadSection.astro';
+import CTASection from '../../components/sections/CTASection.astro';
+import FAQSection from '../../components/sections/FAQSection.astro';
+
+// ── Примитивы ──
+import Tabs from '../../components/ui/Tabs.astro';
+import Carousel from '../../components/ui/Carousel.astro';
+import VideoEmbed from '../../components/ui/VideoEmbed.astro';
+import BeforeAfter from '../../components/ui/BeforeAfter.astro';
+import Tooltip from '../../components/ui/Tooltip.astro';
+import Dropdown from '../../components/ui/Dropdown.astro';
+import Pagination from '../../components/ui/Pagination.astro';
+import ComparisonTable from '../../components/ui/ComparisonTable.astro';
+import Marquee from '../../components/ui/Marquee.astro';
+import CountUp from '../../components/ui/CountUp.astro';
+import GalleryGrid from '../../components/ui/GalleryGrid.astro';
+
+// Демо-ассеты — ключи реестра src/assets/** (см. lib/images/registry.ts).
+const IMG = {
+  premium: 'products/okna-plastikovye/okna-premium/cover.webp',
+  standart: 'products/okna-plastikovye/okna-standart/cover.webp',
+  dveri: 'products/dveri/dveri-vhodnye/cover.webp',
+  demo: 'gallery/01-demo.webp',
+  cmsJpg: 'cms/70c98b26-d5c0-41d7-be2d-26af199ebd8f.jpg',
+  cmsPng: 'cms/697f7b3a-a5b7-4118-b105-90d8526ad2c4.png',
+} as const;
+
+// Постер для RuTube/VK (у них нет публичного превью по id) — оптимизированный
+// URL реального ассета, а не сырой файл.
+const posterImg = asset(IMG.demo);
+const poster = posterImg
+  ? (await getImage({ src: posterImg, width: 1280, format: 'webp' })).src
+  : '/images/placeholder.svg';
+
+const carouselSlides = [IMG.premium, IMG.standart, IMG.dveri, IMG.demo, IMG.cmsJpg, IMG.cmsPng];
+
+const galleryImages = carouselSlides.map((key, i) => ({ thumb: key, alt: `Демо-фото ${i + 1}` }));
+
+const situations = [
+  {
+    id: 'kit-sit-1',
+    title: 'Готовое решение не подходит по размеру',
+    description: 'Стандартный вариант почти устраивает, но не вписывается в помещение — меняем размеры под задачу.',
+    image: IMG.premium,
+    caption: 'Пример: решение под нестандартный размер',
+    prefill: 'custom-size',
+    case: 'Нужен нестандартный размер',
+  },
+  {
+    id: 'kit-sit-2',
+    title: 'Есть референс, но не готовый проект',
+    description: 'Понравился пример у другого бренда — обсуждаем, что реализуемо, и предлагаем близкий вариант.',
+    image: IMG.standart,
+    caption: 'Пример: решение по референсу клиента',
+    prefill: 'by-reference',
+    case: 'Есть референс',
+  },
+  {
+    id: 'kit-sit-3',
+    title: 'Задача для бизнеса, а не для дома',
+    description: 'Объём, сроки и требования отличаются от частного заказа — считаем как отдельный проект.',
+    image: IMG.dveri,
+    caption: 'Пример: решение для бизнес-задачи',
+    prefill: 'business',
+    case: 'Задача для бизнеса',
+  },
+];
+
+const comparisonRows = [
+  { label: 'Срок изготовления', values: ['10 дней', '7 дней', '3 дня'] },
+  { label: 'Гарантия', values: ['1 год', '3 года', '5 лет'] },
+  { label: 'Замер бесплатно', values: [false, true, true] },
+  { label: 'Монтаж в стоимости', values: [false, false, true] },
+];
+
+const tocItems = [
+  { href: '#kit-sections', label: 'Секции' },
+  { href: '#kit-ui', label: 'Примитивы' },
+  { href: '#kit-overlays', label: 'Оверлеи' },
+];
+---
+
+<BaseLayout
+  title="UI-кит стартера"
+  description="Служебная витрина компонентов и секций стартера: все варианты на одном экране."
+  noindex
+  breadcrumbs={[{ name: 'Главная', url: '/' }, { name: 'UI-кит' }]}
+>
+  <SilhouetteSprite />
+  <Lightbox />
+  <Toast />
+
+  <main class="kit">
+    <!-- ── Шапка витрины + оглавление ─────────────────────────────────── -->
+    <section class="section pb-0">
+      <div class="container-page">
+        <p class="eyebrow mb-3">Служебная страница · noindex</p>
+        <h1 class="text-4xl font-bold md:text-5xl">UI-кит стартера</h1>
+        <p class="mt-4 max-w-2xl text-lg text-muted">
+          Все секции, примитивы и оверлеи со всеми вариантами. Подпись над каждым блоком —
+          готовая строка для страницы проекта. Данные секций — из контент-коллекций стартера.
+        </p>
+        <nav class="mt-6 flex flex-wrap gap-2" aria-label="Разделы UI-кита">
+          {tocItems.map((t) => <a href={t.href} class="btn btn-outline">{t.label}</a>)}
+        </nav>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════ СЕКЦИИ ══════════════════════════════ -->
+    <div id="kit-sections">
+      <div class="container-page kit-group"><h2 class="kit-h2">Секции</h2></div>
+
+      <div class="container-page kit-label"><code>&lt;PageHero title subtitle eyebrow breadcrumbs /&gt;</code></div>
+      <PageHero
+        eyebrow="Внутренняя страница"
+        title="Заголовок внутренней страницы"
+        subtitle="Подзаголовок: одна короткая строка под H1 — крошки, надзаголовок и H1 в одном блоке."
+        breadcrumbs={[{ name: 'Главная', url: '/' }, { name: 'Раздел', url: '/about/' }, { name: 'Страница' }]}
+      />
+
+      <div class="container-page kit-label"><code>&lt;HeroSection layout="split" image=… /&gt;</code> — единственный eager LCP на странице</div>
+      <HeroSection layout="split" image={IMG.premium} imageAlt="Демо-изображение героя" />
+
+      <div class="container-page kit-label"><code>&lt;HeroSection /&gt;</code> = <code>layout="centered"</code> без картинки (градиент на токенах)</div>
+      <HeroSection id="hero-centered" priority={false} />
+
+      <div class="container-page kit-label"><code>&lt;HeroSection layout="cover" image=… /&gt;</code></div>
+      <HeroSection layout="cover" id="hero-cover" priority={false} image={IMG.dveri} imageAlt="Демо-фон героя" />
+
+      <div class="container-page kit-label"><code>&lt;FeaturesSection /&gt;</code></div>
+      <FeaturesSection />
+
+      <div class="container-page kit-label"><code>&lt;StatsSection /&gt;</code> = <code>variant="band"</code></div>
+      <StatsSection />
+
+      <div class="container-page kit-label"><code>&lt;StatsSection variant="cards" /&gt;</code></div>
+      <StatsSection variant="cards" id="stats-cards" />
+
+      <div class="container-page kit-label"><code>&lt;IntroSection /&gt;</code></div>
+      <IntroSection image={IMG.standart} imageAlt="Демо-изображение интро" />
+
+      <div class="container-page kit-label"><code>&lt;IntroSection flip /&gt;</code></div>
+      <IntroSection flip image={IMG.cmsJpg} imageAlt="Демо-изображение интро (flip)" />
+
+      <div class="container-page kit-label"><code>&lt;LogosSection /&gt;</code> = <code>variant="marquee"</code></div>
+      <LogosSection />
+
+      <div class="container-page kit-label"><code>&lt;LogosSection variant="grid" /&gt;</code></div>
+      <LogosSection variant="grid" id="partners-grid" />
+
+      <div class="container-page kit-label"><code>&lt;StackedShowcase /&gt;</code></div>
+      <StackedShowcase />
+
+      <div class="container-page kit-label"><code>&lt;GallerySection /&gt;</code> (тизер, scroll-snap без JS)</div>
+      <GallerySection images={carouselSlides} />
+
+      <div class="container-page kit-label"><code>&lt;TeamSection /&gt;</code> = <code>variant="grid"</code></div>
+      <TeamSection />
+
+      <div class="container-page kit-label"><code>&lt;TeamSection variant="row" /&gt;</code></div>
+      <TeamSection variant="row" id="team-row" />
+
+      <div class="container-page kit-label"><code>&lt;TimelineSection /&gt;</code> = <code>variant="vertical"</code></div>
+      <TimelineSection />
+
+      <div class="container-page kit-label"><code>&lt;TimelineSection variant="alternate" /&gt;</code></div>
+      <TimelineSection variant="alternate" id="timeline-alternate" />
+
+      <div class="container-page kit-label"><code>&lt;StepsSection /&gt;</code> (props-only, демо-шаги по умолчанию; нужен <code>&lt;SilhouetteSprite /&gt;</code> на странице)</div>
+      <StepsSection id="steps" />
+
+      <div class="container-page kit-label"><code>&lt;SituationsSection items=… /&gt;</code> (props-only; CTA с префиллом ведёт на <code>#lead</code>)</div>
+      <SituationsSection items={situations} />
+
+      <div class="container-page kit-label"><code>&lt;ReviewsSection /&gt;</code></div>
+      <ReviewsSection />
+
+      <div class="container-page kit-label"><code>&lt;PricingSection /&gt;</code></div>
+      <PricingSection />
+
+      <div class="container-page kit-label"><code>&lt;LeadSection /&gt;</code> = <code>variant="plain"</code></div>
+      <LeadSection source="ui-kit-plain" />
+
+      <div class="container-page kit-label"><code>&lt;LeadSection variant="contrast" /&gt;</code></div>
+      <LeadSection variant="contrast" anchorId="lead-contrast" source="ui-kit-contrast" />
+
+      <div class="container-page kit-label"><code>&lt;CTASection /&gt;</code></div>
+      <CTASection />
+
+      <div class="container-page kit-label"><code>&lt;FAQSection /&gt;</code> (+ FAQPage JSON-LD; карточка «Задать вопрос» ждёт глобальный LeadPopup)</div>
+      <FAQSection />
+    </div>
+
+    <!-- ═════════════════════════ ПРИМИТИВЫ ════════════════════════════ -->
+    <div id="kit-ui">
+      <div class="container-page kit-group"><h2 class="kit-h2">Примитивы</h2></div>
+
+      <section class="section">
+        <div class="container-page grid gap-12">
+          <!-- Tabs -->
+          <div>
+            <p class="kit-label"><code>&lt;Tabs tabs=[…] initial="delivery"&gt;</code> + слоты по id вкладки</p>
+            <Tabs
+              tabs={[
+                { id: 'delivery', label: 'Доставка' },
+                { id: 'payment', label: 'Оплата' },
+                { id: 'warranty', label: 'Гарантия' },
+              ]}
+              initial="delivery"
+              label="Условия"
+            >
+              <Fragment slot="delivery"><p class="py-4">Привезём за 2 дня по городу, по области — по согласованию.</p></Fragment>
+              <Fragment slot="payment"><p class="py-4">Карта, счёт для юрлиц, рассрочка без переплат.</p></Fragment>
+              <Fragment slot="warranty"><p class="py-4">Гарантия 3 года на изделие и 1 год на монтаж.</p></Fragment>
+            </Tabs>
+          </div>
+
+          <div>
+            <p class="kit-label"><code>&lt;Tabs syncKey="kit-size" id="kit-size-1"&gt;</code> × 2 — синхронные экземпляры, выбор запоминается в localStorage; явный <code>id</code> задан для наглядности — без него одинаковые экземпляры получат авто-суффикс <code>-2</code></p>
+            <div class="grid gap-6 md:grid-cols-2">
+              <Tabs
+                tabs={[
+                  { id: 's', label: 'S' },
+                  { id: 'm', label: 'M' },
+                  { id: 'l', label: 'L' },
+                ]}
+                syncKey="kit-size"
+                id="kit-size-1"
+                label="Размер, экземпляр 1"
+              >
+                <Fragment slot="s"><p class="py-4">Экземпляр 1: размер S</p></Fragment>
+                <Fragment slot="m"><p class="py-4">Экземпляр 1: размер M</p></Fragment>
+                <Fragment slot="l"><p class="py-4">Экземпляр 1: размер L</p></Fragment>
+              </Tabs>
+              <Tabs
+                tabs={[
+                  { id: 's', label: 'S' },
+                  { id: 'm', label: 'M' },
+                  { id: 'l', label: 'L' },
+                ]}
+                syncKey="kit-size"
+                id="kit-size-2"
+                label="Размер, экземпляр 2"
+              >
+                <Fragment slot="s"><p class="py-4">Экземпляр 2: размер S</p></Fragment>
+                <Fragment slot="m"><p class="py-4">Экземпляр 2: размер M</p></Fragment>
+                <Fragment slot="l"><p class="py-4">Экземпляр 2: размер L</p></Fragment>
+              </Tabs>
+            </div>
+          </div>
+
+          <!-- Carousel -->
+          {
+            ([1, 2, 3] as const).map((perView) => (
+              <div>
+                <p class="kit-label">
+                  <code>{`<Carousel perView={${perView}}${perView === 1 ? ' dots' : ''}>`}</code>
+                </p>
+                <Carousel label={`Демо-карусель ${perView} в ряд`} perView={perView} dots={perView === 1}>
+                  {carouselSlides.map((key, i) => (
+                    <figure class="card overflow-hidden p-0">
+                      <ContentImage
+                        src={key}
+                        alt={`Слайд ${i + 1}`}
+                        widths={[480, 800, 1200]}
+                        sizes={perView === 1 ? '(min-width: 768px) 80rem, 90vw' : perView === 2 ? '(min-width: 768px) 40rem, 90vw' : '(min-width: 768px) 27rem, 90vw'}
+                        class="aspect-[4/3] w-full object-cover"
+                      />
+                      <figcaption class="p-4 text-sm text-muted">Слайд {i + 1}</figcaption>
+                    </figure>
+                  ))}
+                </Carousel>
+              </div>
+            ))
+          }
+
+          <!-- VideoEmbed -->
+          <div>
+            <p class="kit-label"><code>&lt;VideoEmbed url="https://www.youtube.com/watch?v=…" title /&gt;</code> · <code>rutube.ru/video/&lt;id&gt;</code> + poster · <code>vkvideo.ru/video-1_2</code> + poster · YouTube shorts → <code>ratio="9/16"</code></p>
+            <div class="grid gap-6 md:grid-cols-3">
+              <VideoEmbed url="https://www.youtube.com/watch?v=dQw4w9WgXcQ" title="Демо YouTube" />
+              <VideoEmbed url="https://rutube.ru/video/0123456789abcdef0123456789abcdef/" title="Демо RuTube" poster={poster} />
+              <VideoEmbed url="https://vkvideo.ru/video-1_2" title="Демо VK Video" poster={poster} />
+            </div>
+            <div class="mt-6 max-w-xs">
+              <VideoEmbed url="https://www.youtube.com/shorts/dQw4w9WgXcQ" title="Демо Shorts 9:16" />
+            </div>
+          </div>
+
+          <!-- BeforeAfter -->
+          <div>
+            <p class="kit-label"><code>&lt;BeforeAfter before after beforeAlt afterAlt start=&#123;40&#125; /&gt;</code></p>
+            <div class="max-w-3xl">
+              <BeforeAfter
+                before={IMG.standart}
+                after={IMG.premium}
+                beforeAlt="Демо: до"
+                afterAlt="Демо: после"
+                start={40}
+                sizes="(min-width: 768px) 48rem, 100vw"
+              />
+            </div>
+          </div>
+
+          <!-- Tooltip -->
+          <div>
+            <p class="kit-label"><code>&lt;Tooltip text placement="top|bottom|left|right"&gt;</code> — триггер в слоте, фокусируемый</p>
+            <div class="flex flex-wrap gap-4">
+              {
+                (['top', 'bottom', 'left', 'right'] as const).map((p) => (
+                  <Tooltip text={`Подсказка сверху/снизу/сбоку: placement="${p}"`} placement={p}>
+                    <button type="button" class="btn btn-outline">{p}</button>
+                  </Tooltip>
+                ))
+              }
+            </div>
+          </div>
+
+          <!-- Dropdown -->
+          <div>
+            <p class="kit-label"><code>&lt;Dropdown label items=[&#123; label, href &#125; | &#123; label, goal &#125;] /&gt;</code></p>
+            <Dropdown
+              label="Каталог"
+              items={[
+                { label: 'Пластиковые окна', href: '/katalog/okna-plastikovye/' },
+                { label: 'Входные двери', href: '/katalog/dveri/' },
+                { label: 'Заказать звонок (goal)', goal: 'cta_click' },
+              ]}
+            />
+          </div>
+
+          <!-- Pagination -->
+          <div>
+            <p class="kit-label"><code>&lt;Pagination currentPage=&#123;5&#125; totalPages=&#123;12&#125; href=&#123;(p) =&gt; …&#125; /&gt;</code></p>
+            <Pagination currentPage={5} totalPages={12} href={(p) => (p === 1 ? '/blog/' : `/blog/${p}/`)} />
+          </div>
+
+          <!-- ComparisonTable -->
+          <div>
+            <p class="kit-label"><code>&lt;ComparisonTable headers rows highlight=&#123;2&#125; caption /&gt;</code></p>
+            <ComparisonTable
+              caption="Сравнение тарифов"
+              headers={['Базовый', 'Стандарт', 'Премиум']}
+              rows={comparisonRows}
+              highlight={2}
+            />
+          </div>
+
+          <!-- Marquee -->
+          <div class="grid gap-6">
+            <p class="kit-label"><code>&lt;Marquee textItems=[…] /&gt;</code> = <code>variant="plain"</code></p>
+            <Marquee
+              textItems={[
+                { id: 'k1', text: 'Быстро' },
+                { id: 'k2', text: 'Честно' },
+                { id: 'k3', text: 'С гарантией' },
+                { id: 'k4', text: 'Без предоплаты' },
+              ]}
+            />
+            <p class="kit-label"><code>&lt;Marquee textItems=[…] variant="contrast" speed=&#123;20&#125; /&gt;</code></p>
+            <Marquee
+              variant="contrast"
+              speed={20}
+              textItems={[
+                { id: 'c1', text: 'Замер бесплатно' },
+                { id: 'c2', text: 'Монтаж за день' },
+                { id: 'c3', text: 'Рассрочка 0%' },
+              ]}
+            />
+            <p class="kit-label"><code>&lt;Marquee items=[&#123; src, alt, height &#125;]&gt;</code> — картинки</p>
+            <Marquee items={carouselSlides.map((src, i) => ({ src, alt: `Логотип ${i + 1}`, height: 56 }))} />
+          </div>
+
+          <!-- CountUp -->
+          <div>
+            <p class="kit-label"><code>&lt;CountUp to=&#123;1200&#125; suffix="+" /&gt;</code> — анимируется при входе в кадр</p>
+            <div class="grid gap-6 sm:grid-cols-3">
+              {
+                [
+                  { to: 12, suffix: ' лет' },
+                  { to: 1200, suffix: '+' },
+                  { to: 98, suffix: '%' },
+                ].map((c) => (
+                  <div class="card text-center">
+                    <CountUp to={c.to} suffix={c.suffix} class="text-4xl font-bold text-accent" />
+                  </div>
+                ))
+              }
+            </div>
+          </div>
+
+          <!-- GalleryGrid + Lightbox -->
+          <div>
+            <p class="kit-label"><code>&lt;GalleryGrid images=[&#123; thumb, full?, alt &#125;] group="kit" /&gt;</code> + <code>&lt;Lightbox /&gt;</code> один раз на страницу</p>
+            <GalleryGrid images={galleryImages} group="kit" />
+          </div>
+
+          <!-- Кнопки и карточка — токены global.css -->
+          <div>
+            <p class="kit-label">Кнопки <code>.btn-primary / .btn-outline / .btn-ghost</code>, <code>.card</code>, <code>.eyebrow</code>, <code>.ph.ph-slot</code></p>
+            <div class="flex flex-wrap items-center gap-3">
+              <button type="button" class="btn btn-primary">Primary</button>
+              <button type="button" class="btn btn-outline">Outline</button>
+              <button type="button" class="btn btn-ghost">Ghost</button>
+            </div>
+            <div class="mt-6 grid gap-6 md:grid-cols-2">
+              <div class="card">
+                <p class="eyebrow mb-2">Eyebrow</p>
+                <h3 class="text-xl font-bold">Карточка .card</h3>
+                <p class="mt-2 text-muted">Текст карточки на токенах темы.</p>
+              </div>
+              <div class="ph ph-slot aspect-[4/3]">
+                <svg viewBox="0 0 200 140" style="color: var(--color-paper)"><use href="#sl-frame" /></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ═════════════════════════ ОВЕРЛЕИ ══════════════════════════════ -->
+    <div id="kit-overlays">
+      <div class="container-page kit-group"><h2 class="kit-h2">Оверлеи</h2></div>
+
+      <section class="section">
+        <div class="container-page grid gap-12">
+          <!-- Modal -->
+          <div>
+            <p class="kit-label"><code>&lt;button data-modal-open="kit-modal"&gt;</code> + <code>&lt;Modal id="kit-modal" title size="sm|md|lg"&gt;</code></p>
+            <div class="flex flex-wrap gap-3">
+              <button type="button" class="btn btn-primary" data-modal-open="kit-modal-form">Модалка md с формой</button>
+              <button type="button" class="btn btn-outline" data-modal-open="kit-modal-sm">Модалка sm</button>
+              <button type="button" class="btn btn-outline" data-modal-open="kit-modal-lg">Модалка lg</button>
+            </div>
+          </div>
+
+          <!-- Toast -->
+          <div>
+            <p class="kit-label"><code>&lt;Toast /&gt;</code> один раз на страницу + <code>window.toast.success/error/info(message)</code></p>
+            <div class="flex flex-wrap gap-3">
+              <button type="button" class="btn btn-primary" data-toast-demo="success">toast.success</button>
+              <button type="button" class="btn btn-outline" data-toast-demo="error">toast.error</button>
+              <button type="button" class="btn btn-outline" data-toast-demo="info">toast.info</button>
+              <button type="button" class="btn btn-ghost" data-toast-demo="dismiss">dismissAll</button>
+            </div>
+          </div>
+
+          <div class="text-sm text-muted">
+            Глобальные оверлеи <code>PromoBanner</code>, <code>LeadPopup</code>, <code>CookieConsent</code>
+            монтируются в BaseLayout и на витрине не дублируются.
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Модалки — вне <main>, чтобы не попадать в поток секций -->
+  <Modal id="kit-modal-form" title="Заявка (заглушка)" size="md">
+    <form class="grid gap-3" action="#" method="dialog">
+      <label class="grid gap-1 text-sm">
+        <span>Имя</span>
+        <input type="text" name="name" class="rounded-lg border border-line px-3 py-2" placeholder="Иван" />
+      </label>
+      <label class="grid gap-1 text-sm">
+        <span>Телефон</span>
+        <input type="tel" name="phone" class="rounded-lg border border-line px-3 py-2" placeholder="+7 900 000-00-00" />
+      </label>
+      <p class="text-xs text-muted">Форма-заглушка: ничего не отправляет. Боевая форма — <code>ui/LeadForm.astro</code>.</p>
+      <div class="flex gap-3">
+        <button type="button" class="btn btn-primary" data-modal-close>Отправить</button>
+        <button type="button" class="btn btn-ghost" data-modal-close>Отмена</button>
+      </div>
+    </form>
+  </Modal>
+  <Modal id="kit-modal-sm" title="Маленькая модалка" size="sm">
+    <p>Короткое сообщение. Закрывается крестиком, Escape, кликом по фону или кнопкой.</p>
+    <button type="button" class="btn btn-primary mt-4" data-modal-close>Понятно</button>
+  </Modal>
+  <Modal id="kit-modal-lg" title="Большая модалка" size="lg">
+    <p>Широкая панель под таблицу или галерею.</p>
+    <div class="mt-4">
+      <ComparisonTable headers={['Базовый', 'Стандарт', 'Премиум']} rows={comparisonRows} highlight={3} />
+    </div>
+    <button type="button" class="btn btn-primary mt-4" data-modal-close>Закрыть</button>
+  </Modal>
+</BaseLayout>
+
+<style>
+  .kit-group {
+    padding-top: 4rem;
+  }
+  .kit-h2 {
+    font-size: 2rem;
+    font-weight: 700;
+    border-bottom: 2px solid var(--color-line);
+    padding-bottom: 0.75rem;
+  }
+  /* Подпись блока: имя компонента и вариант — копируется в страницу проекта. */
+  .kit-label {
+    margin: 2rem auto 0.75rem;
+    font-size: 0.8125rem;
+    color: var(--color-muted);
+  }
+  .kit-label code {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    border-radius: var(--radius-sm, 0.375rem);
+    border: 1px solid var(--color-line);
+    background: var(--color-surface);
+    color: var(--color-ink);
+    font-size: 0.8125rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .container-page.kit-label {
+    margin-left: auto;
+    margin-right: auto;
+  }
+</style>
+
+<script>
+  /**
+   * Демо-кнопки тостов. Привязка к DOM — на каждый `astro:page-load`
+   * (SPA-навигация ClientRouter), повторная привязка защищена
+   * `data-bound` на самой кнопке — без глобального флага в env.d.ts.
+   */
+  function initToastDemo() {
+    document.querySelectorAll<HTMLElement>('[data-toast-demo]').forEach((btn) => {
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', () => {
+        const kind = btn.dataset.toastDemo;
+        const api = window.toast;
+        if (!api) return;
+        if (kind === 'dismiss') api.dismissAll();
+        else if (kind === 'success') api.success('Заявка отправлена — это toast.success');
+        else if (kind === 'error') api.error('Что-то пошло не так — это toast.error', 0);
+        else api.info('Просто информация — это toast.info');
+      });
+    });
+  }
+  initToastDemo();
+  document.addEventListener('astro:page-load', initToastDemo);
+</script>

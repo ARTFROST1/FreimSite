@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Documentation
+    url: https://github.com/ARTFROST1/FreimSite#readme
+    about: "Quick start, what you get, the CMS chain, and the full docs table."
+  - name: 💬 Freim Deploy Discussions
+    url: https://github.com/ARTFROST1/FreimDeploy/discussions
+    about: "Questions about the deploy platform itself, not this site template."
+  - name: 🔐 Security issue
+    url: https://github.com/ARTFROST1/FreimSite/security/advisories/new
+    about: "Report privately as a security advisory, not as a public issue."

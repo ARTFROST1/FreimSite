@@ -1,0 +1,331 @@
+---
+/**
+ * SITUATIONS — «список ситуаций клиента» (аккордеон) + синхронное
+ * фото-превью + CTA с префиллом. Generic-версия `SituationsSection.astro`
+ * из боевого проекта (446 строк, завязана на товарный каталог и SIT_META с
+ * жёстко прибитыми товарами) — здесь весь контент приходит из пропсов, без
+ * CMS-коллекции, с нейтральным демо-набором по умолчанию.
+ *
+ * АККОРДЕОН. Ваниль, без библиотек: клик по УЖЕ открытому пункту закрывает
+ * его (можно свернуть все пункты сразу); клик по любому другому — открывает
+ * его и закрывает остальные (`.sit.on` + `aria-expanded`). При
+ * `hover: hover` (не тач-устройство) наведение курсора на пункт тоже его
+ * активирует; фокус клавиатурой — тоже. Раскрытие тела — CSS
+ * `grid-template-rows` (0fr → 1fr), а не `height`/`max-height`: анимация
+ * работает для контента произвольной высоты без замера в JS. Под
+ * `prefers-reduced-motion: reduce` анимация гасится глобальным правилом
+ * `* { transition-duration: .01ms !important }` (src/styles/global.css) —
+ * секция не заводит свой reduced-motion guard.
+ *
+ * ПРЕВЬЮ. Подпись под картинкой берётся из `data-cap` АКТИВНОГО превью
+ * (`.sit-ph.show`), а не по индексу в отдельном массиве — порядок пунктов
+ * можно менять (реордер контента, CMS), не боясь рассинхрона подписи с
+ * картинкой.
+ *
+ * CTA. Ссылка на `ctaHref` (по умолчанию `#lead`) несёт `data-prefill`/
+ * `data-case` — тот же контракт, что читает `LeadSection.astro` (см. её
+ * doc-комментарий, раздел «ПРЕФИЛЛ»): если якорь есть на текущей странице,
+ * клик перехватывает глобальный делегат LeadSection и доводит форму с
+ * префиллом; если якоря нет (или JS выключен) — обычный переход по ссылке.
+ *
+ * SPA-SAFE: инициализация на `astro:page-load`, БЕЗ module-scope
+ * состояния — функция каждый раз заново читает живой DOM, поэтому
+ * переинициализация на каждой навигации безопасна, а старые узлы вместе с
+ * их листенерами выбрасываются свапом (тот же паттерн, что
+ * `FAQSection.astro` и `LeadSection.astro`).
+ */
+import ContentImage from '../ui/ContentImage.astro';
+import type { ImageSource } from '../../lib/images/resolve';
+
+export interface SituationItem {
+  id: string;
+  title: string;
+  description: string;
+  /** Превью-картинка, синхронная с активным пунктом списка. */
+  image: ImageSource;
+  imageAlt?: string;
+  /** Подпись под превью, когда этот пункт активен (`data-cap`). */
+  caption?: string;
+  /** `data-prefill` на CTA-ссылке — категория/тип задачи для формы. */
+  prefill?: string;
+  /** `data-case` на CTA-ссылке — короткое описание кейса для менеджера. */
+  case?: string;
+}
+
+interface Props {
+  eyebrow?: string;
+  title?: string;
+  items?: SituationItem[];
+  /** Якорь лид-формы с префиллом — см. doc-комментарий выше, раздел CTA. */
+  ctaHref?: string;
+  ctaLabel?: string;
+}
+
+/** Нейтральный демо-контент: реальный проект передаёт свои `items` пропом. */
+const DEMO_ITEMS: SituationItem[] = [
+  {
+    id: 'situation-1',
+    title: 'Готовое решение не подходит по размеру',
+    description:
+      'Стандартный вариант почти устраивает, но не вписывается в конкретное помещение — меняем размеры под задачу.',
+    image: '/images/placeholder.svg',
+    caption: 'Пример: решение под нестандартный размер',
+    prefill: 'custom-size',
+    case: 'Нужен нестандартный размер',
+  },
+  {
+    id: 'situation-2',
+    title: 'Есть референс, но не готовый проект',
+    description:
+      'Понравился пример из подборки или у другого бренда — обсуждаем, что из этого реализуемо, и предлагаем близкий вариант.',
+    image: '/images/placeholder.svg',
+    caption: 'Пример: решение по референсу клиента',
+    prefill: 'by-reference',
+    case: 'Есть референс/пример',
+  },
+  {
+    id: 'situation-3',
+    title: 'Задача для бизнеса, а не для дома',
+    description:
+      'Объём, сроки и требования отличаются от частного заказа — считаем и оформляем как отдельный проект.',
+    image: '/images/placeholder.svg',
+    caption: 'Пример: решение для бизнес-задачи',
+    prefill: 'business',
+    case: 'Задача для бизнеса',
+  },
+];
+
+const {
+  eyebrow = 'Форматы задач',
+  title = 'С какими задачами к нам приходят',
+  items = DEMO_ITEMS,
+  ctaHref = '#lead',
+  ctaLabel = 'Это мой случай',
+}: Props = Astro.props;
+---
+
+<section class="section">
+  <div class="container-page">
+    <div class="mx-auto max-w-2xl text-center" data-reveal>
+      <p class="eyebrow mb-3">{eyebrow}</p>
+      <h2 class="text-3xl font-bold md:text-4xl">{title}</h2>
+    </div>
+
+    <div class="sit-grid mt-10" data-reveal>
+      <div class="sit-list border-t border-line">
+        {
+          items.map((item, i) => (
+            <div class:list={['sit border-b border-line', i === 0 && 'on']} data-sit={item.id}>
+              <button
+                class="sit-head flex w-full items-center gap-4 rounded-2xl px-2 py-5 text-left"
+                type="button"
+                aria-expanded={i === 0 ? 'true' : 'false'}
+                aria-controls={`sit-body-${item.id}`}
+              >
+                <span class="sit-num shrink-0 font-bold text-accent" aria-hidden="true">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <span class="sit-title min-w-0 flex-1 text-lg font-bold md:text-xl">{item.title}</span>
+                <span class="sit-icon grid h-10 w-10 shrink-0 place-items-center rounded-full bg-surface" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M8 2v12M2 8h12" />
+                  </svg>
+                </span>
+              </button>
+              <div class="sit-body" id={`sit-body-${item.id}`}>
+                <div class="sit-body-inner overflow-hidden">
+                  <div class="pb-5 pl-1 pr-2 pt-0.5 md:pl-12">
+                    <p class="max-w-[52ch] text-sm text-muted">{item.description}</p>
+                    <a
+                      class="btn btn-primary mt-4 inline-flex"
+                      href={ctaHref}
+                      data-prefill={item.prefill}
+                      data-case={item.case}
+                      data-goal="cta_click"
+                      data-goal-source="situations_case"
+                    >
+                      {ctaLabel} →
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))
+        }
+      </div>
+
+      <div class="sit-preview card" aria-hidden="true">
+        {
+          items.map((item, i) => (
+            <span class:list={['sit-ph', i === 0 && 'show']} data-cap={item.caption ?? item.title}>
+              <ContentImage
+                src={item.image}
+                alt={item.imageAlt ?? ''}
+                widths={[480, 640, 900, 1200]}
+                sizes="(min-width: 901px) 45vw, 100vw"
+                width={900}
+                height={600}
+                loading={i === 0 ? 'eager' : 'lazy'}
+              />
+            </span>
+          ))
+        }
+        <span class="sit-cap" data-sit-cap>
+          {items[0]?.caption ?? items[0]?.title}
+        </span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .sit-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+    gap: clamp(24px, 3.5vw, 52px);
+    align-items: start;
+  }
+
+  .sit-head {
+    transition: background-color 0.3s ease;
+  }
+  .sit.on .sit-head {
+    background: var(--color-surface);
+  }
+  /* Фон при наведении — только там, где есть настоящее наведение курсором:
+     на тач-устройствах `:hover` может «залипать» после тапа. */
+  @media (hover: hover) {
+    .sit-head:hover {
+      background: var(--color-surface);
+    }
+  }
+  .sit-num {
+    transition: transform 0.3s ease;
+  }
+  .sit.on .sit-num {
+    transform: translateX(3px);
+  }
+  .sit-title {
+    opacity: 0.55;
+    transition: opacity 0.3s ease;
+  }
+  .sit.on .sit-title {
+    opacity: 1;
+  }
+  .sit-icon {
+    transition: background-color 0.3s ease, color 0.3s ease, transform 0.4s ease;
+  }
+  .sit.on .sit-icon {
+    background: var(--color-accent);
+    color: var(--color-accent-ink);
+    transform: rotate(45deg);
+  }
+
+  /* Раскрытие через grid-template-rows: 0fr → 1fr, не height/max-height —
+     работает для контента любой высоты без замера в JS. */
+  .sit-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.45s ease;
+  }
+  .sit.on .sit-body {
+    grid-template-rows: 1fr;
+  }
+
+  .sit-preview {
+    position: sticky;
+    /* Синхронизировано с реальной высотой шапки (`--hdr-h`, см.
+       Header.astro); 5rem — тот же дефолт-фолбэк, что у
+       `.faq-ask`/`.steps-visual` (FAQSection.astro/StepsSection.astro), на
+       случай, если переменная ещё не выставлена. */
+    top: var(--hdr-h, 5rem);
+    aspect-ratio: 3 / 2;
+  }
+  .sit-preview .sit-ph {
+    position: absolute;
+    inset: 0;
+    display: block;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+  }
+  .sit-preview .sit-ph.show {
+    opacity: 1;
+  }
+  .sit-preview .sit-ph :global(img) {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .sit-preview .sit-cap {
+    position: absolute;
+    left: 14px;
+    bottom: 14px;
+    z-index: 1;
+    background: var(--color-ink);
+    color: var(--color-paper);
+    font-weight: 600;
+    font-size: 0.8125rem;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    max-width: calc(100% - 28px);
+  }
+
+  @media (max-width: 900px) {
+    .sit-grid {
+      grid-template-columns: 1fr;
+      gap: 1.25rem;
+    }
+    .sit-preview {
+      position: relative;
+      top: auto;
+      order: -1;
+      aspect-ratio: 16 / 9;
+    }
+  }
+</style>
+
+<script>
+  /**
+   * Аккордеон + превью «Ситуаций». SPA-safe: тот же паттерн, что
+   * FAQSection.astro / LeadSection.astro — функция без module-scope
+   * состояния, узлы читаются заново на каждый `astro:page-load`.
+   */
+  function initSituations(): void {
+    const sits = Array.from(document.querySelectorAll<HTMLElement>('.sit-list .sit'));
+    const previews = Array.from(document.querySelectorAll<HTMLElement>('.sit-preview .sit-ph'));
+    const capEl = document.querySelector<HTMLElement>('[data-sit-cap]');
+    if (!sits.length) return;
+
+    function activate(i: number): void {
+      sits.forEach((s, j) => {
+        const on = j === i;
+        s.classList.toggle('on', on);
+        s.querySelector('.sit-head')?.setAttribute('aria-expanded', on ? 'true' : 'false');
+      });
+      previews.forEach((p, j) => p.classList.toggle('show', j === i));
+      // Подпись — из data-cap АКТИВНОГО превью, не по индексу в отдельном
+      // массиве: реордер пунктов не рассинхронит подпись с картинкой.
+      const cap = previews[i]?.dataset.cap;
+      if (capEl && cap) capEl.textContent = cap;
+    }
+
+    const canHover = window.matchMedia('(hover: hover)').matches;
+    sits.forEach((s, i) => {
+      const head = s.querySelector<HTMLButtonElement>('.sit-head');
+      if (!head) return;
+      head.addEventListener('click', () => {
+        if (s.classList.contains('on')) {
+          // Клик по уже открытому пункту закрывает его — можно свернуть все.
+          s.classList.remove('on');
+          head.setAttribute('aria-expanded', 'false');
+        } else {
+          activate(i);
+        }
+      });
+      if (canHover) head.addEventListener('mouseenter', () => activate(i));
+      head.addEventListener('focus', () => activate(i));
+    });
+  }
+
+  document.addEventListener('astro:page-load', initSituations);
+</script>

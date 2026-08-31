@@ -1,0 +1,37 @@
+---
+/**
+ * CTA band — a full-width conversion prompt near the end of the page. One
+ * headline, one button. Keep it uncluttered.
+ */
+import { PRIMARY_CTA } from '../../config/nav';
+import { getEntry } from 'astro:content';
+
+const T = (await getEntry('sections', 'main'))!.data.cta;
+// Button label is the same client-editable field the header renders, so
+// renaming the CTA in the portal changes it on every surface at once.
+const NAV = (await getEntry('navigation', 'main'))!.data;
+
+interface Props {
+  title?: string;
+  subtitle?: string;
+  /** See IntroSection's `cmsScope` — same override mechanism. */
+  cmsScope?: string;
+}
+const { title = T.title, subtitle = T.subtitle, cmsScope = 'sections::cta' } = Astro.props;
+---
+<section class="section">
+  <div class="container-page">
+    <div class="rounded-2xl bg-ink px-8 py-14 text-center text-paper md:px-16 md:py-20">
+      <h2 class="mx-auto max-w-2xl text-3xl font-bold md:text-4xl" data-cms={`${cmsScope}.title`}>{title}</h2>
+      <p class="mx-auto mt-4 max-w-xl text-paper/75" data-cms={`${cmsScope}.subtitle`}>{subtitle}</p>
+      <a
+        href={PRIMARY_CTA.href}
+        class="btn btn-primary mt-8 px-8 py-4 text-base"
+        data-goal="cta_click"
+        data-goal-source="cta_band"
+      >
+        <span data-cms="navigation::ctaLabel">{NAV.ctaLabel}</span>
+      </a>
+    </div>
+  </div>
+</section>

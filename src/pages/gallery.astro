@@ -1,0 +1,79 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Breadcrumbs from '../components/seo/Breadcrumbs.astro';
+import ImageGallery, { type GalleryImage } from '../components/ui/ImageGallery';
+import { SEO } from '../config/seo';
+import { getEntry } from 'astro:content';
+import { getImage } from 'astro:assets';
+import { asset, assetsIn } from '../lib/images/registry';
+import { classifyImageSource, IMAGE_FALLBACK_URL } from '../lib/images/resolve';
+
+const seo = SEO.gallery;
+const crumbs = [{ name: 'Главная', url: '/' }, { name: 'Галерея' }];
+
+const PAGE = (await getEntry('pages', 'main'))!.data.gallery;
+
+/** Сетка острова — 2 колонки на мобиле, 3 на md, 4 на lg (см. ImageGallery.tsx
+ *  `grid-cols-2 md:grid-cols-3 lg:grid-cols-4`); без `sizes` браузер считает
+ *  плитку за 100vw и тянет 800w-кандидат туда, где реально нужно ~25vw. */
+const GRID_SIZES = '(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw';
+
+/**
+ * «Положил файл в src/assets/gallery/ → он появился на странице»: список
+ * берётся из реестра, а не хардкодится. Пока папка пуста — 12 плейсхолдеров,
+ * чтобы страница-демо оставалась осмысленной.
+ */
+const files = assetsIn('gallery');
+const images: GalleryImage[] = files.length
+  ? await Promise.all(
+      files.map(async ({ img, key }, i) => {
+        const alt = `Фото ${i + 1}`;
+        // Реестр специально пускает SVG (портал разрешает их загрузку), но
+        // sharp/getImage SVG не обрабатывает — трансформации на него звать
+        // нельзя, иначе `astro build` падает с UnsupportedImageFormat.
+        // Отдаём как есть, без srcset (масштабировать вектор не нужно).
+        const classified = classifyImageSource(img, asset);
+        // Источник здесь всегда ImageMetadata из реестра, поэтому 'url' сюда
+        // не приходит — эта ветка нужна только для сужения типа для TS.
+        if (classified.kind === 'url') {
+          return { src: IMAGE_FALLBACK_URL, alt };
+        }
+        if (classified.kind === 'svg') {
+          return { src: classified.img.src, width: classified.img.width, height: classified.img.height, alt };
+        }
+        try {
+          const grid = await getImage({ src: classified.img, widths: [400, 800], format: 'webp' });
+          const full = await getImage({ src: classified.img, width: Math.min(img.width, 2000), format: 'webp' });
+          return {
+            src: grid.src,
+            srcSet: grid.srcSet.attribute,
+            sizes: GRID_SIZES,
+            full: full.src,
+            width: img.width,
+            height: img.height,
+            alt,
+          };
+        } catch (err) {
+          // Битый файл в src/assets/gallery/ — тоже не повод ронять сборку
+          // (Global Constraint: контент клиента никогда не роняет сборку).
+          console.warn(`[images] не удалось обработать src/assets/${key} — рендерю плейсхолдер`, err);
+          return { src: IMAGE_FALLBACK_URL, alt };
+        }
+      }),
+    )
+  : Array.from({ length: 12 }, (_, i) => ({ src: '/images/placeholder.svg', alt: `Фото ${i + 1}` }));
+---
+<BaseLayout title={seo.title} description={seo.description} ogImage={seo.ogImage}>
+  <main class="section">
+    <div class="container-page">
+      <Breadcrumbs items={crumbs} class="mb-6" />
+      <h1 class="text-4xl font-bold md:text-5xl" data-cms="pages::gallery.heading.title">{PAGE.heading.title}</h1>
+      <p class="mt-4 max-w-2xl text-muted" data-cms="pages::gallery.heading.subtitle">{PAGE.heading.subtitle}</p>
+
+      <div class="mt-10">
+        <!-- client:visible — the JS island loads only when scrolled into view -->
+        <ImageGallery client:visible images={images} />
+      </div>
+    </div>
+  </main>
+</BaseLayout>

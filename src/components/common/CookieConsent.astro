@@ -1,0 +1,145 @@
+---
+/**
+ * Cookie-consent — плоская узкая полоса по низу экрана: мелкий текст +
+ * маленькая кнопка «Принять» в одну строку, минимум занятого экрана. Не
+ * блокирует контент, отдельного «отклонить» нет.
+ *
+ * Контракты (не переименовывать порознь):
+ *   - localStorage `cookie-consent` = 'accepted' + событие
+ *     `app:cookie-consent` (CustomEvent на document) в момент принятия —
+ *     его ждёт consent-gate Метрики (analytics/YandexMetrika.astro), чтобы
+ *     загрузить tag.js без перезагрузки страницы;
+ *   - id="cookie-consent" и показ/скрытие Tailwind-классом `hidden` на
+ *     корне — PromoBanner.astro проверяет именно класс
+ *     (`classList.contains('hidden')`) и ждёт решения по cookie перед
+ *     своим показом;
+ *   - пока полоса видна, на <body> висит класс `cookie-open`, а её реальная
+ *     высота лежит в CSS-переменной `--cookie-h` — по этой паре мобильный
+ *     остров `.mobile-cta` (global.css) приподнимается над полосой, вместо
+ *     того чтобы оказаться под ней.
+ *
+ * Инициализация на `astro:page-load` (а не только DOMContentLoaded): при
+ * SPA-переходах через ClientRouter второго DOMContentLoaded не будет, и на
+ * следующей странице баннер бы не появился.
+ */
+---
+<div
+  id="cookie-consent"
+  class="cookie-consent hidden fixed inset-x-0 bottom-0 z-50 border-t border-line bg-paper text-ink"
+>
+  <div class="cookie-inner container-page">
+    <p class="cookie-text">
+      Пользуясь сайтом, вы соглашаетесь с использованием cookies и{' '}
+      <a href="/privacy-policy/" class="underline">политикой конфиденциальности</a>.
+    </p>
+    <button id="cookie-accept" type="button" class="cookie-accept">Принять</button>
+  </div>
+</div>
+
+<style>
+  .cookie-consent {
+    padding-bottom: env(safe-area-inset-bottom);
+    transform: translateY(100%);
+    transition: transform 0.35s ease;
+  }
+  .cookie-consent.visible {
+    transform: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cookie-consent {
+      transition: none;
+    }
+  }
+  .cookie-inner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-block: 10px;
+  }
+  .cookie-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 12.5px;
+    line-height: 1.35;
+    color: var(--color-muted);
+  }
+  .cookie-text a {
+    color: var(--color-accent);
+  }
+  /* Не .btn: тот заметно крупнее (0.75rem/1.5rem) — узкой плоской полосе
+     нужна кнопка ровно в её рост. */
+  .cookie-accept {
+    flex: 0 0 auto;
+    min-height: 34px;
+    padding: 0 18px;
+    border-radius: var(--radius-sm, 8px);
+    background: var(--color-accent);
+    color: var(--color-accent-ink);
+    font-family: var(--font-heading);
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    transition: filter 0.2s ease;
+  }
+  .cookie-accept:hover {
+    filter: brightness(0.94);
+  }
+  .cookie-accept:active {
+    transform: scale(0.97);
+  }
+  @media (min-width: 768px) {
+    .cookie-text {
+      font-size: 13px;
+    }
+  }
+</style>
+
+<script>
+  (function () {
+    function initConsent() {
+      // const, а не var: сужение типа после проверки на null должно пережить
+      // вложенные замыкания (rAF и dismiss).
+      const banner = document.getElementById('cookie-consent');
+      const accept = document.getElementById('cookie-accept');
+      if (!banner || !accept || banner.dataset.bound) return;
+      banner.dataset.bound = '1';
+      try {
+        if (localStorage.getItem('cookie-consent') === 'accepted') return;
+      } catch (e) {}
+
+      // Реальная высота полосы → на неё поднимается `.mobile-cta`. Текст
+      // переносится по-разному на разной ширине, поэтому меряем.
+      const syncHeight = () => {
+        document.body.style.setProperty('--cookie-h', banner.offsetHeight + 'px');
+      };
+
+      banner.classList.remove('hidden');
+      syncHeight();
+      document.body.classList.add('cookie-open');
+      window.addEventListener('resize', syncHeight);
+      // Двойной rAF: класс должен попасть в кадр ПОСЛЕ снятия .hidden, иначе
+      // display:none → transform:none схлопываются в один кадр без анимации.
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          banner.classList.add('visible');
+        });
+      });
+
+      const dismiss = () => {
+        try {
+          localStorage.setItem('cookie-consent', 'accepted');
+        } catch (e) {}
+        document.dispatchEvent(new CustomEvent('app:cookie-consent'));
+        banner.classList.remove('visible');
+        banner.classList.add('hidden');
+        document.body.classList.remove('cookie-open');
+        document.body.style.removeProperty('--cookie-h');
+        window.removeEventListener('resize', syncHeight);
+      };
+      accept.addEventListener('click', dismiss);
+    }
+    document.addEventListener('DOMContentLoaded', initConsent);
+    document.addEventListener('astro:page-load', initConsent);
+  })();
+</script>

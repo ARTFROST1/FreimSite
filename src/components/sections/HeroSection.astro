@@ -1,0 +1,175 @@
+---
+/**
+ * HERO — the highest-converting block. Keep it: one clear headline, one
+ * supporting line, one primary CTA (+ optional secondary).
+ *
+ * Three compositions via `layout` (default = `centered`, the original look —
+ * the home page renders byte-for-byte the same without the prop):
+ *
+ *   centered — copy block on a token gradient (or on `image` as a full-bleed
+ *              background with the ink overlay, like `cover` but left-aligned).
+ *   split    — two columns: copy left, `image` right (4:3, rounded). The
+ *              image is the page's ONE eager LCP candidate
+ *              (docs/PERFORMANCE.md §8) — do not add another eager image.
+ *   cover    — `image` stretched over the whole section, darkening overlay
+ *              built on the `ink` token, light (`paper`) copy centered.
+ *
+ * All three keep the SAME data-cms map (hero::badge/title/subtitle/
+ * ctaPrimary/ctaSecondary) — the copy block is written once below and only
+ * wrapped differently, so annotations.test.ts sees identical attributes.
+ *
+ * Perf note: with a background image (`centered`+image / `cover`) that image
+ * is usually the LCP element — add a <link rel="preload" as="image"> for it
+ * in BaseLayout's head slot.
+ */
+import { SITE } from '../../config/site';
+import { PRIMARY_CTA } from '../../config/nav';
+import { getEntry } from 'astro:content';
+import ContentImage from '../ui/ContentImage.astro';
+import type { ImageSource } from '../../lib/images/resolve';
+
+export type HeroLayout = 'centered' | 'split' | 'cover';
+
+interface Props {
+  title?: string;
+  subtitle?: string;
+  image?: ImageSource;
+  imageAlt?: string;
+  /** Composition, see file doc. Default keeps the original look. */
+  layout?: HeroLayout;
+  /** Anchor id; override when a page composes more than one hero (duplicate ids otherwise). */
+  id?: string;
+  /** `true` (default) = this hero's image is THE LCP candidate (eager + fetchpriority=high).
+   *  Pass `false` for any secondary hero on the page — one eager image per page
+   *  (docs/PERFORMANCE.md §8). */
+  priority?: boolean;
+}
+// Client-editable copy lives in the `hero` singleton (CMS portal writes it);
+// explicit props still win for pages that compose their own hero.
+const HERO = (await getEntry('hero', 'main'))!.data;
+const {
+  title = HERO.title,
+  subtitle = HERO.subtitle,
+  image,
+  imageAlt = SITE.name,
+  layout = 'centered',
+  id = 'hero',
+  priority = true,
+} = Astro.props;
+
+const imgLoading = priority ? 'eager' : 'lazy';
+const imgPriority = priority ? 'high' : 'auto';
+
+const isSplit = layout === 'split';
+const isCover = layout === 'cover';
+/** Image as full-bleed background: `cover` always, `centered` when given one. */
+const hasBg = !!image && !isSplit;
+/** Light copy over the ink overlay. */
+const light = hasBg;
+
+const secondaryBtn = light
+  ? 'btn-outline border-paper text-paper hover:bg-paper hover:text-ink'
+  : 'btn-outline';
+---
+<section
+  id={id}
+  class:list={[
+    'relative flex items-center overflow-hidden',
+    isCover ? 'min-h-[92vh]' : 'min-h-[88vh]',
+    light && 'text-paper',
+  ]}
+  data-layout={layout}
+>
+  {
+    !isSplit && (
+      <div class="absolute inset-0 -z-10">
+        {hasBg ? (
+          <>
+            <ContentImage
+              src={image!}
+              alt={imageAlt}
+              widths={[640, 1024, 1600, 2000]}
+              sizes="100vw"
+              class="h-full w-full object-cover"
+              loading={imgLoading}
+              fetchpriority={imgPriority}
+            />
+            <div class="hero-overlay absolute inset-0" aria-hidden="true" />
+          </>
+        ) : (
+          <div class="h-full w-full bg-gradient-to-br from-surface via-paper to-surface" />
+        )}
+      </div>
+    )
+  }
+
+  <div class="container-page py-24">
+    <div class:list={[isSplit && 'grid gap-12 lg:grid-cols-2 lg:items-center']}>
+      <div class:list={[isCover ? 'mx-auto max-w-3xl text-center' : 'max-w-2xl']}>
+        <p class="eyebrow mb-4" data-cms="hero::badge">{HERO.badge}</p>
+        <h1 class="text-4xl font-bold leading-tight md:text-6xl" data-cms="hero::title">{title}</h1>
+        <p
+          class:list={[
+            'mt-6 max-w-xl text-lg',
+            light ? 'text-paper/85' : 'text-muted',
+            isCover && 'mx-auto',
+          ]}
+          data-cms="hero::subtitle"
+        >
+          {subtitle}
+        </p>
+        <div class:list={['mt-9 flex flex-wrap gap-4', isCover && 'justify-center']}>
+          <a
+            href={PRIMARY_CTA.href}
+            class="btn btn-primary px-7 py-3.5"
+            data-goal="cta_click"
+            data-goal-source="hero"
+          >
+            <span data-cms="hero::ctaPrimary">{HERO.ctaPrimary}</span>
+          </a>
+          <a href="/#features" class={`btn ${secondaryBtn} px-7 py-3.5`}>
+            <span data-cms="hero::ctaSecondary">{HERO.ctaSecondary}</span>
+          </a>
+        </div>
+      </div>
+
+      {
+        isSplit && (
+          <div class="hero-media overflow-hidden rounded-2xl bg-surface">
+            {image ? (
+              <ContentImage
+                src={image}
+                alt={imageAlt}
+                widths={[640, 960, 1280]}
+                sizes="(min-width: 1024px) 50vw, 100vw"
+                class="h-full w-full object-cover"
+                loading={imgLoading}
+                fetchpriority={imgPriority}
+              />
+            ) : (
+              <div class="h-full w-full bg-gradient-to-br from-surface via-paper to-surface" />
+            )}
+          </div>
+        )
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  /* Darkening overlay on tokens: ink at the bottom (under the copy) fading
+     out upwards — no hard-coded black, so a rebranded palette follows. */
+  .hero-overlay {
+    background: linear-gradient(
+      to top,
+      color-mix(in srgb, var(--color-ink) 70%, transparent) 0%,
+      color-mix(in srgb, var(--color-ink) 40%, transparent) 55%,
+      color-mix(in srgb, var(--color-ink) 20%, transparent) 100%
+    );
+  }
+  /* Split: fixed 4:3 frame so the eager image has a box before it arrives —
+     no layout shift when the LCP candidate paints. */
+  .hero-media {
+    aspect-ratio: 4 / 3;
+  }
+</style>

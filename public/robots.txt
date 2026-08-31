@@ -1,0 +1,19 @@
+# Update the Sitemap host to your real domain (must match astro.config `site`).
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /api/
+# Внутренний инструмент разбора фотоархива — сам отдаёт noindex, но краулерам
+# незачем тратить на него бюджет обхода.
+Disallow: /sortirovka/
+
+# Яндекс: рекламные и трекинговые параметры не создают уникального контента —
+# склеиваем дубли, не теряя бюджет обхода. Директиву понимает только Яндекс,
+# остальные боты её игнорируют.
+User-agent: Yandex
+Disallow: /admin
+Disallow: /api/
+Disallow: /sortirovka/
+Clean-param: utm_source&utm_medium&utm_campaign&utm_content&utm_term&yclid&gclid&etext&openstat /
+
+Sitemap: https://example.com/sitemap-index.xml

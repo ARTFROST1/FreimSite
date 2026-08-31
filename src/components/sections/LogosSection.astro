@@ -1,0 +1,122 @@
+---
+/**
+ * LOGOS — «Нам доверяют»: логотипы партнёров/клиентов. Данные из коллекции
+ * `partners` (src/content/home/partners.json), заголовок — `sections.partners`.
+ *
+ * ВАРИАНТЫ (`variant`) — только раскладка, данные и `data-cms` одинаковые:
+ *   - `marquee` (default) — бесконечная лента через `ui/Marquee` (чистый
+ *                 CSS, пауза на hover, статична под reduced-motion);
+ *   - `grid`    — статичная сетка плиток 2/3/6 в ряд, 0 JS.
+ *
+ * ЛОГОТИП НЕОБЯЗАТЕЛЕН. `logo` пусто → текстовая плашка с `name` (партнёр
+ * без файла не выпадает из блока). `href` пусто → элемент не ссылка.
+ *
+ * CMS. `name` размечен ВСЕГДА: без логотипа — видимая плашка, с логотипом —
+ * `sr-only` (accessible name ссылки/плитки; картинка тогда идёт с `alt=""`).
+ * Логотип — `data-cms` + `data-fd-attr="src"` на самой картинке. В marquee-
+ * варианте атрибуты печатаются только на первой копии трека (см. Marquee).
+ */
+import { getCollection, getEntry } from 'astro:content';
+import ContentImage from '../ui/ContentImage.astro';
+import Marquee from '../ui/Marquee.astro';
+
+const PARTNERS = (await getCollection('partners')).map((e) => e.data);
+const T = (await getEntry('sections', 'main'))!.data.partners;
+
+interface Props {
+  title?: string;
+  /** `marquee` — бегущая лента; `grid` — статичная сетка. */
+  variant?: 'marquee' | 'grid';
+  /** См. `cmsScope` у IntroSection — тот же механизм переопределения. */
+  cmsScope?: string;
+  /** `id` секции для якоря. */
+  id?: string;
+}
+const { title = T.title, variant = 'marquee', cmsScope = 'sections::partners', id = 'partners' } = Astro.props;
+
+const LOGO_H = 40;
+const marqueeItems = PARTNERS.map((p) => ({
+  src: p.logo || undefined,
+  href: p.href || undefined,
+  label: p.name,
+  height: LOGO_H,
+  cmsSrc: `partners:${p.id}:logo`,
+  cmsLabel: `partners:${p.id}:name`,
+}));
+---
+<section id={id} class="section bg-surface logos">
+  <div class="container-page">
+    <h2 class="text-center text-lg font-semibold text-muted md:text-xl" data-cms={`${cmsScope}.title`}>{title}</h2>
+  </div>
+
+  {
+    variant === 'marquee' ? (
+      <div class="mt-10">
+        <Marquee items={marqueeItems} speed={45} gap="4rem" />
+      </div>
+    ) : (
+      <div class="container-page">
+        <ul class="mt-10 grid list-none grid-cols-2 gap-4 p-0 sm:grid-cols-3 lg:grid-cols-6">
+          {PARTNERS.map((p) => {
+            const Tile = p.href ? 'a' : 'div';
+            return (
+              <li>
+                <Tile
+                  class="logo-tile card"
+                  href={p.href || undefined}
+                  target={p.href ? '_blank' : undefined}
+                  rel={p.href ? 'noopener' : undefined}
+                >
+                  {p.logo ? (
+                    <ContentImage
+                      src={p.logo}
+                      alt=""
+                      widths={[LOGO_H * 2 * 4, LOGO_H * 3 * 4]}
+                      sizes={`${LOGO_H * 4}px`}
+                      width={LOGO_H * 4}
+                      height={LOGO_H}
+                      class="logo-img"
+                      data-cms={`partners:${p.id}:logo`}
+                      data-fd-attr="src"
+                    />
+                  ) : null}
+                  <span class:list={[p.logo ? 'sr-only' : 'logo-label']} data-cms={`partners:${p.id}:name`}>{p.name}</span>
+                </Tile>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    )
+  }
+</section>
+
+<style>
+  .logo-tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 6rem;
+    padding: 1rem 1.25rem;
+    color: inherit;
+    text-decoration: none;
+    transition: border-color 0.2s ease;
+  }
+  a.logo-tile:hover {
+    border-color: var(--color-accent);
+  }
+  .logo-img {
+    height: 2.5rem;
+    width: auto;
+    max-width: 100%;
+    object-fit: contain;
+  }
+  .logo-label {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 0.95rem;
+    line-height: 1.25;
+    text-align: center;
+    color: var(--color-muted);
+  }
+</style>

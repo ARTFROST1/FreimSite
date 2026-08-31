@@ -1,0 +1,9 @@
+{
+  "main": {
+    "badge": "Brand",
+    "title": "A short, benefit-driven sentence about what you offer.",
+    "subtitle": "Describe the business in 140–160 characters. This is the fallback meta description and the Organization schema description.",
+    "ctaPrimary": "Оставить заявку",
+    "ctaSecondary": "Узнать больше "
+  }
+}

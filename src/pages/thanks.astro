@@ -1,0 +1,81 @@
+---
+/**
+ * Thank-you / conversion page (the /spasibo/ pattern from the catalogue reference).
+ *
+ * Why a separate page: it gives ads platforms a clean URL-based conversion
+ * (`lead_thankyou` goal + the page URL itself), lets you upsell next steps,
+ * and is the redirect target of <LeadForm success="redirect">.
+ *
+ * noindex — a thank-you page must never rank.
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { SITE, activeSocialLinks } from '../config/site';
+import { phoneHref } from '../lib/utils';
+
+const socials = activeSocialLinks();
+---
+<BaseLayout
+  title={`Заявка отправлена — ${SITE.name}`}
+  description="Спасибо! Мы получили вашу заявку и свяжемся с вами в ближайшее время."
+  noindex
+>
+  <main class="section" data-thankyou>
+    <div class="container-page flex min-h-[55vh] flex-col items-center justify-center text-center">
+      <span aria-hidden="true" class="text-6xl leading-none text-success">✓</span>
+      <h1 class="mt-6 text-3xl font-bold md:text-4xl">Спасибо! Заявка отправлена</h1>
+      <p class="mt-4 max-w-md text-muted">
+        Мы свяжемся с вами в ближайшее рабочее время.
+        {SITE.workingHours.display && ` Режим работы: ${SITE.workingHours.display}.`}
+      </p>
+
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-4">
+        <a
+          href={`tel:${phoneHref(SITE.contact.phoneRaw)}`}
+          class="btn btn-primary"
+          data-goal-source="thankyou"
+          data-cms="navigation::phone"
+          data-fd-attr="href"
+          data-fd-attr-template="tel:{value}"
+        >
+          Позвонить сейчас
+        </a>
+        {
+          socials.map(([key, url]) => (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener"
+              class="btn btn-outline capitalize"
+              data-goal-source="thankyou"
+            >
+              {key}
+            </a>
+          ))
+        }
+      </div>
+
+      <a href="/" class="btn btn-ghost mt-10 text-sm">← Вернуться на главную</a>
+    </div>
+  </main>
+</BaseLayout>
+
+<script is:inline>
+  // Fire the conversion goal only when THIS page is actually shown
+  // (the [data-thankyou] guard keeps SPA navigations elsewhere silent).
+  (function () {
+    function fire() {
+      if (!document.querySelector('[data-thankyou]')) return;
+      if (typeof window.trackConversion !== 'function') return;
+      // `from` (источник формы) проставляет lead-form.ts → thanksUrl().
+      // БЕЗ НЕГО ЦЕЛЬ НЕ ЗАСЧИТЫВАЕТСЯ — см. docs/ANALYTICS-PITFALLS.md №10.
+      // Боевой случай: страницу открыли по прямой ссылке 33 раза (проверяли,
+      // ловится ли цель), Метрика записала 32 «конверсии» при НУЛЕ заявок.
+      // Цель, которую накручивают простым открытием адреса, непригодна ни для
+      // отчётов, ни тем более для оптимизации ставок.
+      var from = new URLSearchParams(window.location.search).get('from');
+      if (!from) return;
+      window.trackConversion('lead_thankyou', { source: from });
+    }
+    document.addEventListener('astro:page-load', fire);
+  })();
+</script>

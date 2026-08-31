@@ -1,0 +1,107 @@
+---
+/**
+ * Yandex Metrika counter (SPA-схема + Вебвизор + согласие).
+ * Renders nothing when PUBLIC_YANDEX_METRIKA_ID is unset, so the site works
+ * with analytics disabled. `is:inline` keeps the snippet verbatim.
+ *
+ * ВАЖНО (баг пойман 2026-08-11 на боевом проекте): содержимое <script> здесь —
+ * сырой текст, НЕ оборачивать его в {`…`} — Astro выведет скобки и бэктики
+ * буквально, и в браузере код станет мёртвым строковым литералом.
+ * Регрессия: __tests__/metrika-alive.test.ts
+ *
+ * Три решения, принятые 2026-08-11 (разбор — docs/recipes/metrika-guide.md):
+ *
+ * 1. SPA-схема по официальной инструкции Яндекса для SPA-сайтов:
+ *    `defer: true` ОТКЛЮЧАЕТ автоматическую отправку первого просмотра, и все
+ *    просмотры (включая первый!) отправляет AnalyticsRouterHit.astro ручным
+ *    `ym('hit')` на каждый `astro:page-load`. Не менять одно без другого:
+ *    defer без ручного первого хита = потерянные первые просмотры; ручной
+ *    первый хит без defer = двойной счёт.
+ *
+ * 2. `webvisor: true` — Вебвизор 2.0 поддерживает SPA, но записи разбиваются
+ *    на страницы только благодаря ручным хитам из п. 1. Вторая половина
+ *    включения — галочка в настройках счётчика (см. metrika-guide.md);
+ *    без неё опция в коде молчит.
+ *
+ * 3. Согласие (152-ФЗ, ужесточение с 30.05.2025): очередь `ym()` и `init`
+ *    создаются сразу — цели/хиты копятся локально, — но сам tag.js (то есть
+ *    первый сетевой запрос) грузится только после согласия из CookieConsent
+ *    (localStorage `cookie-consent` или событие `app:cookie-consent`).
+ *    Очередь затем выгружается целиком: первый hit с yclid в URL доезжает до
+ *    Метрики, атрибуция Директа не рвётся. Отключение гейта (грузить сразу):
+ *    По умолчанию гейт ВЫКЛЮЧЕН (см. комментарий у CONSENT_GATE ниже):
+ *    включение стоит 80-90% данных. PUBLIC_METRIKA_CONSENT_GATE=1 —
+ *    осознанное решение заказчика/юриста, а не значение по умолчанию.
+ *
+ * `ecommerce: "dataLayer"` включён авансом: пока событий нет — трафика это
+ * не создаёт, а когда каталог получит цены, e-commerce заработает без
+ * правки счётчика.
+ */
+import { METRIKA_ID } from '../../lib/analytics';
+
+// Гейт ВЫКЛЮЧЕН по умолчанию: счётчик грузится сразу, cookie-баннер остаётся
+// информационным. Включать осознанно и с открытыми глазами — на боевом
+// проекте гейт стоил 85% данных: 141 посетитель по логам сервера против 19
+// визитов в Метрике за сутки, то есть ни целей, ни Вебвизора, ни обучения
+// ставок по большинству людей (docs/ANALYTICS-PITFALLS.md, ошибка №2).
+// PUBLIC_METRIKA_CONSENT_GATE=1 → tag.js только после клика «Принять».
+const CONSENT_GATE = /^(1|true)$/i.test(
+  String(import.meta.env.PUBLIC_METRIKA_CONSENT_GATE ?? '').trim(),
+);
+---
+{
+  METRIKA_ID && (
+    <>
+      <script is:inline define:vars={{ id: METRIKA_ID, gate: CONSENT_GATE }}>
+        // Очередь ym: вызовы (init, hit, reachGoal) копятся до загрузки tag.js.
+        window.ym = window.ym || function () { (window.ym.a = window.ym.a || []).push(arguments); };
+        window.ym.l = 1 * new Date();
+        window.__ymId = id;
+        // Опции — как в актуальном (2026) официальном сниппете Метрики
+        // (ssr:true, ecommerce), ПЛЮС defer:true — официальная SPA-схема:
+        // без авто-хита, все просмотры шлёт AnalyticsRouterHit. В отличие от
+        // сниппета из интерфейса, referrer/url в init не передаём — их несёт
+        // каждый ручной hit.
+        ym(id, 'init', {
+          ssr: true,
+          clickmap: true,
+          trackLinks: true,
+          accurateTrackBounce: true,
+          webvisor: true,
+          defer: true,
+          ecommerce: 'dataLayer'
+        });
+
+        var tagSrc = 'https://mc.yandex.ru/metrika/tag.js?id=' + id;
+        function loadMetrikaTag() {
+          for (var j = 0; j < document.scripts.length; j++) {
+            if (document.scripts[j].src === tagSrc) return;
+          }
+          var s = document.createElement('script');
+          s.async = 1;
+          s.src = tagSrc;
+          document.head.appendChild(s);
+        }
+
+        var consented = false;
+        try { consented = localStorage.getItem('cookie-consent') === 'accepted'; } catch (e) {}
+        if (!gate || consented) {
+          loadMetrikaTag();
+        } else {
+          document.addEventListener('app:cookie-consent', loadMetrikaTag, { once: true });
+        }
+      </script>
+      {!CONSENT_GATE && (
+        <noscript>
+          <div>
+            <img
+              src={`https://mc.yandex.ru/watch/${METRIKA_ID}`}
+              style="position:absolute; left:-9999px;"
+              alt=""
+            />
+          </div>
+        </noscript>
+      )}
+    </>
+  )
+}

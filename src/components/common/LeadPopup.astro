@@ -1,0 +1,308 @@
+---
+/**
+ * LeadPopup — timed + exit-intent lead modal (trigger engine ported from
+ * the catalogue reference).
+ *
+ * Triggers (all silenced forever this session once ANY lead form succeeds —
+ * the `app_lead_submitted` flag set by lead-form.ts):
+ *   • engaged — after `delay` seconds of CUMULATIVE session time (persists
+ *     across page navigations via sessionStorage timestamps);
+ *   • exit-intent (desktop) — cursor leaves through the top edge, but no
+ *     sooner than `exitMinSeconds` into the session.
+ * Guards: shown-once-per-session locks per trigger, a 15s cooldown after
+ * close (so closing with a cursor flick up doesn't instantly re-trigger
+ * exit-intent), suppressed while an on-page lead form is in view.
+ *
+ * A "mobile back-trap" variant (history.pushState + popstate) exists in the
+ * catalogue reference — deliberately NOT included here; see
+ * docs/recipes/popups-engagement.md.
+ *
+ * Manual trigger (ported from a client project's LeadPopup.astro, task W2-G): any
+ * element with `[data-pop]` opens the popup on click, in ADDITION to the
+ * engine above — a delegated document-level listener, so it works from any
+ * section without extra wiring. `data-pop-source` is forwarded to
+ * `trackConversion('popup_open', {source})`, distinct from the engine's own
+ * `popup_shown` goal, so you can tell "engine fired" from "visitor clicked a
+ * button" in analytics. `data-pop-title` temporarily overrides the popup's
+ * heading text for that open only (the default text is snapshotted the first
+ * time and restored on every OTHER open, including the timed/exit triggers) —
+ * useful when several sections share one `<LeadPopup>` instance but want
+ * slightly different framing (see FAQSection's "ask a question" card).
+ * Manual opens bypass the engine's cooldown/once-per-trigger/`leadSubmitted`
+ * gates entirely — they're an explicit visitor action, not a heuristic guess,
+ * so nothing should silently swallow the click.
+ *
+ * `resetPopupForm()` runs before EVERY open (both engine and manual): once a
+ * lead is submitted (`success="event"` → `lead-form.ts` hides the form and
+ * disables the submit button for good), reopening the popup without this
+ * would show a permanently stuck "Заявка отправлена!" instead of a fresh
+ * form — a real bug caught on a client project once the manual trigger was added
+ * there (submit once, then click a DIFFERENT "ask a question" button later
+ * in the session — without a reset it stays on the success screen forever).
+ *
+ * Usage (once per page, usually in a layout or landing page):
+ *   <LeadPopup title="Оставьте номер" subtitle="Перезвоним за 15 минут" />
+ *   <button data-pop data-pop-source="faq" data-pop-title="Задайте вопрос">…</button>
+ */
+import LeadForm from '../ui/LeadForm.astro';
+
+interface Props {
+  title?: string;
+  subtitle?: string;
+  /** Seconds of cumulative session time before the engaged trigger. */
+  delay?: number;
+  /** Minimum session seconds before exit-intent may fire. */
+  exitMinSeconds?: number;
+}
+
+const {
+  title = 'Получите консультацию',
+  subtitle = 'Оставьте номер — перезвоним в течение 15 минут и ответим на все вопросы.',
+  delay = 25,
+  exitMinSeconds = 15,
+} = Astro.props;
+---
+
+<div
+  id="lead-popup"
+  class="fixed inset-0 z-[110] hidden items-center justify-center p-4"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="lead-popup-title"
+>
+  <div id="lead-popup-backdrop" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+
+  <div
+    id="lead-popup-card"
+    class="relative w-full max-w-md rounded-xl border border-line bg-paper p-6 shadow-2xl outline-none md:p-8"
+    tabindex="-1"
+  >
+    <button
+      id="lead-popup-close"
+      type="button"
+      class="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full text-xl text-muted transition-colors hover:bg-surface hover:text-ink"
+      aria-label="Закрыть"
+    >
+      ×
+    </button>
+
+    <!-- Form state -->
+    <div data-popup-form>
+      <h2 id="lead-popup-title" class="pr-8 text-xl font-bold md:text-2xl">{title}</h2>
+      <p class="mt-2 text-sm text-muted">{subtitle}</p>
+      <div class="mt-5">
+        <LeadForm source="popup" success="event" layout="stacked" />
+      </div>
+    </div>
+
+    <!-- Success state -->
+    <div data-popup-success hidden class="flex flex-col items-center gap-3 py-6 text-center">
+      <span aria-hidden="true" class="text-4xl leading-none text-success">✓</span>
+      <p class="text-lg font-bold">Заявка отправлена!</p>
+      <p class="text-sm text-muted">Мы свяжемся с вами в ближайшее время.</p>
+    </div>
+  </div>
+</div>
+
+<script is:inline define:vars={{ delaySec: delay, exitMinSec: exitMinSeconds }}>
+  (function () {
+    if (window.__leadPopupInit) return;
+    window.__leadPopupInit = true;
+
+    var DELAY_MS = delaySec * 1000;
+    var EXIT_MIN_MS = exitMinSec * 1000;
+    var COOLDOWN_MS = 15000;
+
+    var modalOpen = false;
+    var lastClosedAt = 0;
+    var engagedTimer = null;
+    var defaultTitle = null; // snapshotted on first open, see showPopup()
+    var submitDefaultHTML = null; // snapshotted on first open, see resetPopupForm()
+
+    function ss(key, val) {
+      try {
+        if (val === undefined) return sessionStorage.getItem(key);
+        sessionStorage.setItem(key, val);
+      } catch (e) { return null; }
+    }
+
+    function leadSubmitted() { return ss('app_lead_submitted') === '1'; }
+
+    // Cumulative session time: seed the start timestamp once per session.
+    if (!ss('app_lp_start')) ss('app_lp_start', String(Date.now()));
+    function elapsed() {
+      var start = parseInt(ss('app_lp_start') || '0', 10);
+      return start ? Date.now() - start : 0;
+    }
+
+    function popupEl() { return document.getElementById('lead-popup'); }
+
+    // Suppress while an on-page lead form is visible (don't popup over a form).
+    var formInView = false;
+    function watchForms() {
+      var forms = document.querySelectorAll('[data-lead-form]');
+      if (!forms.length || !('IntersectionObserver' in window)) return;
+      var io = new IntersectionObserver(function (entries) {
+        formInView = entries.some(function (e) { return e.isIntersecting; });
+      }, { threshold: 0.3 });
+      forms.forEach(function (f) {
+        // Skip the popup's own form.
+        if (!f.closest('#lead-popup')) io.observe(f);
+      });
+    }
+
+    function canShow() {
+      return !modalOpen &&
+        !leadSubmitted() &&
+        !formInView &&
+        Date.now() - lastClosedAt > COOLDOWN_MS &&
+        document.activeElement?.tagName !== 'INPUT' &&
+        document.activeElement?.tagName !== 'TEXTAREA';
+    }
+
+    // После успешного сабмита (success="event") lead-form.ts прячет
+    // `<form data-lead-form>` и оставляет кнопку сабмита disabled с текстом
+    // «Отправка…» — своё состояние он не сбрасывает, потому что для
+    // success='event' это забота попапа. Без этой функции повторное открытие
+    // (в первую очередь ручным триггером — движок с once-per-session-локами
+    // сам себя не откроет второй раз в той же сессии) навсегда показывало бы
+    // «Заявка отправлена!» вместо чистой формы — реальный баг, пойманный на
+    // боевом проекте. `form.reset()` заодно обнуляет UTM/client_id/page_url
+    // hidden-поля — безвредно: lead-form.ts строит тело запроса заново из
+    // getStoredUTMParams()/client_id/location.href при каждом сабмите, а не
+    // читает текущее значение этих полей.
+    function resetPopupForm() {
+      var el = popupEl();
+      if (!el) return;
+      var formWrap = el.querySelector('[data-popup-form]');
+      var successWrap = el.querySelector('[data-popup-success]');
+      if (successWrap) successWrap.hidden = true;
+      if (formWrap) formWrap.hidden = false;
+      var form = el.querySelector('[data-lead-form]');
+      if (!form) return;
+      form.hidden = false;
+      form.reset();
+      var errEl = form.querySelector('[data-form-error]');
+      if (errEl) {
+        errEl.hidden = true;
+        errEl.textContent = '';
+      }
+      var consentLabel = form.querySelector('.lead-consent');
+      if (consentLabel) consentLabel.classList.remove('consent-error');
+      var phoneInput = form.querySelector('input[type="tel"]');
+      if (phoneInput) phoneInput.setAttribute('aria-invalid', 'false');
+      var submitBtn = form.querySelector('[data-submit]');
+      if (submitBtn) {
+        if (submitDefaultHTML === null) submitDefaultHTML = submitBtn.innerHTML;
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = submitDefaultHTML;
+      }
+    }
+
+    // Общая часть открытия: сброс формы, (пере)простановка заголовка,
+    // показ модалки и фокус. `titleOverride` — только у ручного триггера
+    // (data-pop-title); движок всегда передаёт null/undefined и получает
+    // дефолтный заголовок обратно.
+    function showPopup(titleOverride) {
+      var el = popupEl();
+      if (!el) return;
+      resetPopupForm();
+      var titleEl = document.getElementById('lead-popup-title');
+      if (titleEl) {
+        if (defaultTitle === null) defaultTitle = titleEl.textContent;
+        titleEl.textContent = titleOverride || defaultTitle;
+      }
+      modalOpen = true;
+      el.classList.remove('hidden');
+      el.classList.add('flex');
+      document.body.style.overflow = 'hidden';
+      var card = document.getElementById('lead-popup-card');
+      card && card.focus();
+    }
+
+    function open(trigger) {
+      var el = popupEl();
+      if (!el || !canShow()) return;
+      if (ss('app_lp_' + trigger) === '1') return; // shown-once lock per trigger
+      ss('app_lp_' + trigger, '1');
+      showPopup(null);
+      if (typeof window.trackConversion === 'function') {
+        window.trackConversion('popup_shown', { trigger: trigger });
+      }
+    }
+
+    // Ручной триггер — см. doc-comment файла. Явное действие посетителя, в
+    // обход cooldown/once-per-trigger/`leadSubmitted` гейтов движка выше:
+    // единственная проверка — попап уже не открыт прямо сейчас.
+    function openManual(titleOverride, source) {
+      var el = popupEl();
+      if (!el || modalOpen) return;
+      showPopup(titleOverride);
+      if (typeof window.trackConversion === 'function') {
+        window.trackConversion('popup_open', source ? { source: source } : undefined);
+      }
+    }
+
+    function close() {
+      var el = popupEl();
+      if (!el) return;
+      modalOpen = false;
+      lastClosedAt = Date.now();
+      el.classList.add('hidden');
+      el.classList.remove('flex');
+      document.body.style.overflow = '';
+    }
+
+    // ── Triggers ──
+    function armEngaged() {
+      if (engagedTimer) clearTimeout(engagedTimer);
+      var remaining = Math.max(0, DELAY_MS - elapsed());
+      engagedTimer = setTimeout(function () { open('engaged'); }, remaining);
+    }
+
+    document.addEventListener('mouseout', function (e) {
+      if (e.relatedTarget || e.clientY > 0) return;         // only via top edge
+      if (elapsed() < EXIT_MIN_MS) return;
+      open('exit');
+    });
+
+    // ── Wiring (document-level once; DOM re-queried per open/close) ──
+    document.addEventListener('click', function (e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      var trigger = t.closest('[data-pop]');
+      if (trigger) {
+        openManual(trigger.getAttribute('data-pop-title'), trigger.getAttribute('data-pop-source'));
+        return;
+      }
+      if (t.closest('#lead-popup-close') || (t.id === 'lead-popup-backdrop')) close();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && modalOpen) close();
+    });
+
+    // Success from the embedded form (success='event').
+    document.addEventListener('app:lead-success', function (e) {
+      var detail = e.detail || {};
+      if (detail.source !== 'popup') { close(); return; }   // other form → just silence
+      var el = popupEl();
+      if (!el) return;
+      var f = el.querySelector('[data-popup-form]');
+      var s = el.querySelector('[data-popup-success]');
+      if (f) f.hidden = true;
+      if (s) s.hidden = false;
+      setTimeout(close, 4000);
+    });
+
+    function init() {
+      // Popup markup must exist on this page.
+      if (!popupEl()) return;
+      if (leadSubmitted()) return;
+      watchForms();
+      armEngaged();
+    }
+
+    init();
+    document.addEventListener('astro:page-load', init);
+  })();
+</script>

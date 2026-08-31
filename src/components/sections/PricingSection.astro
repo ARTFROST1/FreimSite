@@ -1,0 +1,78 @@
+---
+/**
+ * PRICING — plan cards from the `pricing` collection
+ * (src/content/home/pricing.json). The `featured` plan is visually
+ * highlighted. Swap the data or drop the section entirely if the business
+ * doesn't publish prices.
+ */
+import { getCollection, getEntry } from 'astro:content';
+
+const PRICING = (await getCollection('pricing')).map((e) => e.data);
+const T = (await getEntry('sections', 'main'))!.data.pricing;
+
+interface Props {
+  eyebrow?: string;
+  title?: string;
+  subtitle?: string;
+  /** See IntroSection's `cmsScope` — same override mechanism. Scopes the
+   *  HEADING copy only; the plan cards always come from the `pricing`
+   *  collection, which is what their item-level data-cms binds to. */
+  cmsScope?: string;
+}
+const {
+  eyebrow = T.eyebrow,
+  title = T.title,
+  subtitle = T.subtitle,
+  cmsScope = 'sections::pricing',
+} = Astro.props;
+---
+<section id="pricing" class="section">
+  <div class="container-page">
+    <div class="mx-auto max-w-2xl text-center">
+      <p class="eyebrow mb-3" data-cms={`${cmsScope}.eyebrow`}>{eyebrow}</p>
+      <h2 class="text-3xl font-bold md:text-4xl" data-cms={`${cmsScope}.title`}>{title}</h2>
+      <p class="mt-4 text-muted" data-cms={`${cmsScope}.subtitle`}>{subtitle}</p>
+    </div>
+
+    <div class="mt-12 grid gap-6 md:grid-cols-3">
+      {
+        PRICING.map((plan) => (
+          <div
+            class={`card flex flex-col p-8 ${plan.featured ? 'border-accent ring-2 ring-accent' : ''}`}
+          >
+            {plan.featured && (
+              <span class="mb-4 self-start rounded-full bg-accent px-3 py-1 text-xs font-semibold text-accent-ink">
+                Популярный
+              </span>
+            )}
+            <h3 class="text-lg font-semibold" data-cms={`pricing:${plan.id}:name`}>{plan.name}</h3>
+            <div class="mt-4 flex items-baseline gap-1">
+              <span class="text-3xl font-bold" data-cms={`pricing:${plan.id}:price`}>{plan.price}</span>
+              {plan.period && (
+                <span class="text-sm text-muted">/ <span data-cms={`pricing:${plan.id}:period`}>{plan.period}</span></span>
+              )}
+            </div>
+            <ul class="mt-6 flex-1 space-y-3 text-sm">
+              {plan.features.map((feat, i) => (
+                <li class="flex items-start gap-2">
+                  <svg class="mt-0.5 h-4 w-4 shrink-0 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                  <span class="text-muted" data-cms={`pricing:${plan.id}:features.${i}`}>{feat}</span>
+                </li>
+              ))}
+            </ul>
+            <a
+              href={plan.cta.href}
+              class={`btn mt-8 ${plan.featured ? 'btn-primary' : 'btn-outline'}`}
+              data-goal="cta_click"
+              data-goal-source="pricing"
+            >
+              <span data-cms={`pricing:${plan.id}:cta.label`}>{plan.cta.label}</span>
+            </a>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>

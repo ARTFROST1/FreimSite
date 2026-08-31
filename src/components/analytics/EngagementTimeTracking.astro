@@ -1,0 +1,124 @@
+---
+/**
+ * EngagementTimeTracking — «лестница вовлечённого времени» для автостратегий
+ * рекламных кабинетов (сигнал качества визита поверх обычных целей). Порт
+ * скрипта, отработанного на боевом проекте (see recipes/metrika-guide.md):
+ * оригинал был babel-транспилятом с захардкоженными префиксом/шагами —
+ * здесь оба параметра вынесены в пропсы, чтобы стартер не тянул чужой
+ * контракт целей.
+ *
+ * Логика:
+ *   - активность = любое ДОВЕРЕННОЕ (isTrusted) событие из списка ниже;
+ *     синтетические события (программный dispatchEvent) не считаются —
+ *     иначе сторонний скрипт мог бы накручивать вовлечённость;
+ *   - каждые CHECK_SEC (5) секунд — тик; засчитывается, только если в его
+ *     окне была активность (активное время, а не время открытой вкладки);
+ *   - как только накопленное активное время достигает очередной ступени из
+ *     `steps`, уходит цель `${goalPrefix}${секунды}` (например engaged_30);
+ *   - счётчики живут в sessionStorage → время копится сквозь SPA-переходы
+ *     (ClientRouter) и полные перезагрузки в рамках одной вкладки; после
+ *     последней ступени интервал останавливается и в этой сессии больше не
+ *     идёт (перезаход на сайт из другой вкладки/сессии считает заново).
+ *
+ * Отправка — через window.trackConversion (ConversionTracking.astro): встаёт
+ * в consent-очередь Метрики и остаётся no-op, если счётчик не подключён.
+ * НИКАКИХ dataLayer-пушей и console.log — если понадобится отладочный лог,
+ * добавляйте временно и локально, не в общий компонент.
+ *
+ * ⚠️ ПЕРЕД созданием целей в интерфейсе Метрики: тип условия — ТОЧНОЕ
+ * совпадение идентификатора, НЕ «регулярное выражение». Со стандартными
+ * шагами (30..180) регулярное выражение тоже сработало бы (30 не является
+ * префиксом 60/90/…), но это хрупко: добавите ступень длиннее 180 с тем же
+ * префиксом (например engaged_300) — и regex-условие `engaged_30` поймает
+ * заодно и её, задвоив конверсию. Точное совпадение застраховано от этого
+ * при любом наборе шагов.
+ *
+ * Include once in BaseLayout <head>, ПОСЛЕ EngagementTracking.
+ */
+interface Props {
+  /** Префикс имени цели: цель = `${goalPrefix}${секунды}` (engaged_30, …).
+   *  Меняете — заведите цели в Метрике под новые идентификаторы: старые
+   *  перестанут получать конверсии молча (reachGoal на незаведённую цель не
+   *  ошибка, а no-op). */
+  goalPrefix?: string;
+  /** Ступени лестницы — секунды АКТИВНОГО времени, в любом порядке (компонент
+   *  сам сортирует по возрастанию). Меняете список — заводите ровно столько
+   *  же целей в интерфейсе, сколько элементов в массиве. */
+  steps?: number[];
+}
+
+const { goalPrefix = 'engaged_', steps = [30, 60, 90, 120, 150, 180] } = Astro.props;
+const sortedSteps = [...steps].sort((a, b) => a - b);
+---
+
+<script is:inline define:vars={{ goalPrefix, steps: sortedSteps }}>
+  (function () {
+    if (window.__engageTimeInit) return;
+    window.__engageTimeInit = true;
+
+    var CHECK_SEC = 5; // окно проверки активности, сек
+    var PREFIX = goalPrefix;
+    var STEPS = steps; // отсортированы по возрастанию во фронтматтере
+    if (!STEPS.length) return;
+
+    // Счётчики в sessionStorage: активное время копится сквозь SPA-переходы
+    // и полные перезагрузки в рамках одной вкладки за сессию.
+    var KEY_TOTAL = 'uao_active_sec'; // накопленное активное время, сек
+    var KEY_NEXT = 'uao_next_step'; // индекс ближайшей непройденной ступени
+
+    var mem = {};
+    function getCount(key) {
+      try {
+        return +(sessionStorage.getItem(key) || 0) || mem[key] || 0;
+      } catch (e) {
+        // sessionStorage недоступен (приватный режим) — считаем в памяти
+        // вкладки; счёт просто не переживёт перезагрузку.
+        return mem[key] || 0;
+      }
+    }
+    function setCount(key, value) {
+      mem[key] = value;
+      try {
+        sessionStorage.setItem(key, String(value));
+      } catch (e) {
+        /* private mode */
+      }
+    }
+
+    var nextIdx = getCount(KEY_NEXT);
+    if (nextIdx >= STEPS.length) return; // лестница уже пройдена в этой сессии
+
+    var EVENTS = [
+      'touchmove', 'blur', 'focus', 'focusin', 'focusout', 'resize', 'scroll',
+      'click', 'dblclick', 'mousedown', 'mouseup', 'mousemove', 'mouseover',
+      'mouseout', 'mouseenter', 'mouseleave', 'change', 'select', 'submit',
+      'keydown', 'keypress', 'keyup', 'error', 'load',
+    ];
+
+    var active = false;
+    EVENTS.forEach(function (name) {
+      window.addEventListener(name, function (e) {
+        if (e.isTrusted) active = true;
+      }, { passive: true });
+    });
+
+    var timer = window.setInterval(function () {
+      if (!active) return;
+      active = false;
+
+      var total = getCount(KEY_TOTAL) + CHECK_SEC;
+      setCount(KEY_TOTAL, total);
+
+      // >= вместо === на случай, если вкладка была заморожена (throttled
+      // background tab) и тик пропущен — ступень всё равно не потеряется.
+      while (nextIdx < STEPS.length && total >= STEPS[nextIdx]) {
+        if (typeof window.trackConversion === 'function') {
+          window.trackConversion(PREFIX + STEPS[nextIdx]);
+        }
+        nextIdx += 1;
+        setCount(KEY_NEXT, nextIdx);
+      }
+      if (nextIdx >= STEPS.length) window.clearInterval(timer);
+    }, CHECK_SEC * 1000);
+  })();
+</script>

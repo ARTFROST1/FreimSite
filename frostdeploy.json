@@ -1,0 +1,9 @@
+{
+  "kind": "static",
+  "build": {
+    "command": "npm run build",
+    "output": "dist",
+    "install": "auto"
+  },
+  "nodeVersion": "22"
+}

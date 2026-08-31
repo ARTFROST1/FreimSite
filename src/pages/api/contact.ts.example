@@ -1,0 +1,192 @@
+/**
+ * ============================================================================
+ *  SERVER-MODE lead endpoint (POST /api/contact) — hardened
+ *  catalogue-reference-style pipeline.
+ * ----------------------------------------------------------------------------
+ *  Flow: origin allowlist → rate limit → honeypot (fake success) →
+ *        Zod validation → JSONL persistence → Telegram fire-and-forget.
+ *  Persistence is mandatory (fails the request); notification is not (lead is
+ *  never lost because a messenger was down).
+ *
+ *  ACTIVATE:
+ *    1. astro.config.mjs: uncomment the node adapter. You may keep
+ *       `output: 'static'` — with an adapter installed this route still works
+ *       (hybrid: static pages + on-demand API routes marked prerender=false).
+ *    2. Rename this file to `contact.ts` (drop `.example`).
+ *    3. Set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in the server .env.
+ *
+ *  Accepts both <LeadForm> (phone-only) and ContactForm (name+phone+message).
+ *  data/leads.jsonl is append-only, sits OUTSIDE dist/ so deploys never wipe
+ *  it. Add `data/` to .gitignore on real projects (PII!) and back it up.
+ * ============================================================================
+ */
+import type { APIRoute } from 'astro';
+import { z } from 'zod';
+import { appendFileSync, mkdirSync, existsSync } from 'node:fs';
+import path from 'node:path';
+import { SITE } from '../../config/site';
+
+export const prerender = false;
+
+// ── Rate limit: 5 req / min / IP (in-memory, per-process) ──────────────────
+const RATE_LIMIT = 5;
+const RATE_WINDOW = 60_000;
+const hits = new Map<string, number[]>();
+
+function rateLimited(ip: string): boolean {
+  const now = Date.now();
+  const recent = (hits.get(ip) ?? []).filter((t) => now - t < RATE_WINDOW);
+  if (recent.length >= RATE_LIMIT) return true;
+  recent.push(now);
+  hits.set(ip, recent);
+  return false;
+}
+
+// ── Origin allowlist ────────────────────────────────────────────────────────
+// CORS headers alone don't block simple form POSTs — hence the server check.
+// A null Origin is allowed: Safari omits it on same-origin no-JS <form> POST.
+function isAllowedOrigin(origin: string | null): boolean {
+  if (!origin) return true;
+  try {
+    const site = new URL(SITE.url);
+    const allowed = new Set([
+      site.origin,
+      site.origin.replace('://', '://www.'),
+      ...(import.meta.env.DEV
+        ? ['http://localhost:4321', 'http://127.0.0.1:4321']
+        : []),
+    ]);
+    return allowed.has(new URL(origin).origin);
+  } catch {
+    return false;
+  }
+}
+
+// ── Validation ──────────────────────────────────────────────────────────────
+const leadSchema = z.object({
+  phone: z
+    .string()
+    .transform((v) => v.replace(/[^\d+]/g, ''))
+    .refine((v) => /^\+?[78]?\d{10}$/.test(v.replace(/^\+/, '')), {
+      message: 'Некорректный номер телефона',
+    }),
+  name: z.string().trim().max(200).optional().default('Клиент с сайта'),
+  message: z.string().trim().max(5000).optional(),
+  source: z.string().max(100).optional(),
+  consent: z.coerce.boolean().optional(),
+  page_url: z.string().max(2000).optional(),
+  client_id: z.string().max(100).optional(),
+  utm_source: z.string().max(200).optional(),
+  utm_medium: z.string().max(200).optional(),
+  utm_campaign: z.string().max(200).optional(),
+  utm_term: z.string().max(500).optional(),
+  utm_content: z.string().max(500).optional(),
+  yclid: z.string().max(100).optional(),
+  gclid: z.string().max(100).optional(),
+});
+
+// ── Persistence: append-only JSONL (PII — gitignore + back up) ─────────────
+const LEADS_FILE = path.resolve('data', 'leads.jsonl');
+
+function persistLead(lead: Record<string, unknown>): void {
+  const dir = path.dirname(LEADS_FILE);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  appendFileSync(LEADS_FILE, JSON.stringify(lead) + '\n', 'utf-8');
+}
+
+// ── Notification: Telegram, fire-and-forget ────────────────────────────────
+async function notifyTelegram(lead: Record<string, unknown>): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chat = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chat) return;
+
+  const row = (label: string, v: unknown) => (v ? `${label}: ${v}\n` : '');
+  const text =
+    `📨 Новая заявка — ${SITE.name}\n\n` +
+    row('👤', lead.name) +
+    row('📞', lead.phone) +
+    row('💬', lead.message) +
+    row('🔗 Страница', lead.page_url) +
+    row('📍 Источник формы', lead.source) +
+    row('utm_source', lead.utm_source) +
+    row('utm_campaign', lead.utm_campaign) +
+    row('client_id', lead.client_id);
+
+  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chat, text }),
+    signal: AbortSignal.timeout(5000),
+  });
+}
+
+// ── Handler ─────────────────────────────────────────────────────────────────
+export const POST: APIRoute = async ({ request, clientAddress }) => {
+  const json = (data: unknown, status = 200) =>
+    new Response(JSON.stringify(data), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+  if (!isAllowedOrigin(request.headers.get('origin'))) {
+    return json({ success: false, message: 'Forbidden' }, 403);
+  }
+
+  const ip =
+    clientAddress ??
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    'unknown';
+  if (rateLimited(ip)) {
+    return json({ success: false, message: 'Слишком много запросов' }, 429);
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    const ct = request.headers.get('content-type') ?? '';
+    if (ct.includes('application/json')) {
+      body = await request.json();
+    } else {
+      // No-JS <form> POST fallback.
+      body = Object.fromEntries((await request.formData()).entries());
+    }
+  } catch {
+    return json({ success: false, message: 'Некорректный запрос' }, 400);
+  }
+
+  // Honeypot: pretend success, persist nothing, notify no one.
+  if (body.company) return json({ success: true }, 201);
+
+  const parsed = leadSchema.safeParse(body);
+  if (!parsed.success) {
+    return json(
+      {
+        success: false,
+        errors: parsed.error.issues.map((i) => ({
+          field: i.path.join('.'),
+          message: i.message,
+        })),
+      },
+      422,
+    );
+  }
+
+  const lead = {
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    ip,
+    userAgent: request.headers.get('user-agent') ?? '',
+    ...parsed.data,
+  };
+
+  try {
+    persistLead(lead); // mandatory — a lead must never vanish silently
+  } catch (e) {
+    console.error('[contact] persist failed:', e);
+    return json({ success: false, message: 'Ошибка сервера' }, 500);
+  }
+
+  // Fire-and-forget: notification failure never fails the request.
+  notifyTelegram(lead).catch((e) => console.error('[contact] telegram failed:', e));
+
+  return json({ success: true, leadId: lead.id }, 201);
+};

@@ -1,0 +1,76 @@
+name: "🧊 Won't build or won't start"
+description: "npm install, npm run dev, or npm run build fails"
+title: "[setup] "
+labels: ["setup"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please do **not** paste `.env` contents, API keys, or
+        bot tokens — redact them first.
+
+        Можно писать по-русски.
+
+  - type: input
+    id: version
+    attributes:
+      label: FreimSite commit or tag
+      description: "Output of `git rev-parse --short HEAD`, or the release/tag you started from"
+      placeholder: "a1b2c3d"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: node
+    attributes:
+      label: Node.js version
+      description: "The template targets Node 22 (see `.nvmrc`) — `node -v`"
+      options:
+        - "22.x"
+        - "20.x"
+        - "18.x or older"
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: step
+    attributes:
+      label: Where it fails
+      options:
+        - npm install
+        - npm run dev
+        - npm run build
+        - npm test
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What you ran and what happened
+      placeholder: |
+        Ran `npm install` on a fresh clone, Node 22.
+        Fails during `prebuild` — generate-content-schema.ts throws.
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Terminal output
+      description: "The last ~40 lines. Redact secrets."
+      render: shell
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: "Node version matches `.nvmrc` (22)"
+        - label: "I ran `npm run build` through the npm script, not a bare `astro build`"
+        - label: "I redacted secrets from everything pasted above"
+          required: true

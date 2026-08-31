@@ -1,0 +1,107 @@
+/**
+ * ============================================================================
+ *  POST /api/lead/draft — шаг 1 лид-пайплайна v2 (МОДУЛЬ ВЫКЛЮЧЕН).
+ * ----------------------------------------------------------------------------
+ *  Файл лежит с суффиксом `.example`, чтобы static-сборка БЕЗ адаптера
+ *  оставалась зелёной (активный `prerender = false` роут её валит).
+ *
+ *  АКТИВАЦИЯ:
+ *    1. `npm i` (адаптер @astrojs/node уже в dependencies).
+ *    2. astro.config.mjs: раскомментировать node-адаптер
+ *       (`adapter: node({ mode: 'standalone' })`) — hybrid-режим.
+ *    3. Убрать `.example` из имён ОБОИХ файлов (draft.ts + complete.ts).
+ *    4. Заполнить LEAD_* в .env (см. .env.example).
+ *  Подробно — docs/recipes/lead-pipeline.md.
+ * ----------------------------------------------------------------------------
+ *  Логика: телефон + согласие получены — лид фиксируется НЕМЕДЛЕННО.
+ *  Черновик попадает на таймер: если complete не придёт за
+ *  LEAD_FLUSH_MINUTES, флашер (server/lead-flusher.mjs) сам отправит его
+ *  ботам.
+ *
+ *  Пайплайн: origin → rate limit → Zod → журнал +
+ *  черновик. Ботов на этом этапе НЕ уведомляем.
+ * ============================================================================
+ */
+import type { APIRoute } from 'astro';
+import {
+  appendJournal,
+  quarantineLead,
+  clientIp,
+  draftSchema,
+  isAllowedOrigin,
+  isAlreadySent,
+  looksAutomated,
+  json,
+  newLeadId,
+  rateLimited,
+  saveDraft,
+} from '../../../lib/lead-server/leads';
+
+export const prerender = false;
+
+export const POST: APIRoute = async ({ request, clientAddress }) => {
+  if (!isAllowedOrigin(request.headers.get('origin'))) {
+    return json(403, { ok: false, error: 'forbidden' });
+  }
+  let ip = 'unknown';
+  try {
+    ip = clientIp(request, clientAddress);
+  } catch {
+    /* clientAddress недоступен в некоторых средах */
+  }
+  if (rateLimited(ip)) {
+    return json(429, { ok: false, error: 'rate_limited' });
+  }
+
+  let raw: unknown;
+  try {
+    raw = await request.json();
+  } catch {
+    return json(400, { ok: false, error: 'bad_json' });
+  }
+  if (typeof raw !== 'object' || raw === null) {
+    return json(400, { ok: false, error: 'bad_json' });
+  }
+
+
+  // Ловушка для ботов: скрытое поле, которое человек не видит и не заполняет.
+  // Заполнено → заявка НЕ идёт менеджерам, но и не пропадает: ложится в
+  // карантин на диске (см. quarantineLead). Молча удалять нельзя — 21.08.2026
+  // автозаполнение браузера заполнило такое поле у живого человека, и заявки
+  // исчезли без следа.
+  const trapped = Boolean(String((raw as Record<string, unknown>).hp_token ?? '').trim());
+  // Второй эшелон: POST мимо страницы (см. looksAutomated). Фильтра по тексту
+  // нет и здесь — черновик несёт только контакт, свободных полей в нём нет.
+  const automated = looksAutomated(request);
+
+  const parsed = draftSchema.safeParse(raw);
+  if (!parsed.success) {
+    return json(422, {
+      ok: false,
+      errors: parsed.error.issues.map((i) => ({ field: i.path.join('.'), message: i.message })),
+    });
+  }
+
+  const lead = { ...parsed.data, lead_id: parsed.data.lead_id ?? newLeadId() };
+  // Лид уже полностью отправлялся (повторный «Далее» после complete в другой
+  // вкладке и т.п.) — черновик не пересоздаём.
+  if (isAlreadySent(lead.lead_id)) {
+    return json(201, { ok: true, lead_id: lead.lead_id });
+  }
+
+  if (trapped || automated) {
+    // Отвечаем как при успехе: бот не должен понять, что его отсекли.
+    quarantineLead(lead, 'draft', trapped ? 'honeypot' : 'not_browser');
+    return json(201, { ok: true, lead_id: lead.lead_id });
+  }
+
+  try {
+    appendJournal('draft', lead);
+    saveDraft(lead);
+  } catch (err) {
+    console.error('[lead/draft] persist failed:', err);
+    return json(500, { ok: false, error: 'persist_failed' });
+  }
+
+  return json(201, { ok: true, lead_id: lead.lead_id });
+};

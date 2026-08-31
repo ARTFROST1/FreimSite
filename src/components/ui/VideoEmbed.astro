@@ -1,0 +1,182 @@
+---
+/**
+ * VideoEmbed — ленивый фасад видео (YouTube / RuTube / VK Video).
+ *
+ * До клика — НОЛЬ запросов к видеохостингу и ноль JS плеера: iframe рендерит
+ * `srcdoc` — мини-документ с превью и CSS-кнопкой play, чья ссылка ведёт на
+ * embed с autoplay=1 (приём из facades-паттерна, референс — MIT-компонент
+ * .research/ui/.../video.astro). `src` у iframe тоже стоит, но при живом
+ * `srcdoc` браузер его не грузит — это фолбэк для доисторических браузеров.
+ *
+ * Постер: YouTube отдаёт превью автоматически (i.ytimg.com/hqdefault); у
+ * RuTube/VK гадаемого URL превью нет — передавай `poster` (лучше через
+ * src/assets + получившийся src от astro:assets), иначе фасад рисует
+ * нейтральную заглушку на токенах темы (фон подложки виден сквозь
+ * прозрачный srcdoc).
+ *
+ * Аналитика: цель `video_play` (GOALS.VIDEO_PLAY в src/lib/analytics.ts)
+ * уходит через window.trackConversion при запуске — см. бандл-скрипт внизу.
+ *
+ * Использование:
+ *   <VideoEmbed url="https://youtu.be/dQw4w9WgXcQ" title="Обзор кухни «Верона»" />
+ *   <VideoEmbed url="https://rutube.ru/video/<id>/" title="…" poster={posterSrc} />
+ *   <VideoEmbed url="https://vkvideo.ru/video-1_2" title="…" ratio="9/16" />
+ */
+import { escapeHtml, parseVideoUrl } from '../../lib/video-embed';
+
+interface Props {
+  /** Ссылка на видео как её видит человек (watch/shorts/youtu.be/rutube/vk). */
+  url: string;
+  /** Название ролика — title iframe'а и alt превью. Обязателен (a11y). */
+  title: string;
+  /** Своя картинка превью (URL). Для RuTube/VK — фактически обязателен. */
+  poster?: string;
+  /** Соотношение сторон. По умолчанию 16/9, для shorts — 9/16. */
+  ratio?: '16/9' | '9/16';
+  /** Префикс aria-label кнопки play в фасаде: «<playLabel> <title>». */
+  playLabel?: string;
+  class?: string;
+  [key: string]: unknown;
+}
+
+const {
+  url,
+  title,
+  poster,
+  ratio,
+  playLabel = 'Смотреть видео:',
+  class: className = '',
+  ...rest
+} = Astro.props;
+
+const video = parseVideoUrl(url);
+if (!video && import.meta.env.DEV) {
+  // В dev — громко: битая ссылка должна быть видна разработчику сразу.
+  // В проде — НЕ throw: по trust-модели CMS плохой ввод портит только
+  // отображение этого блока (рендерится фолбэк-ссылка ниже), а не страницу.
+  throw new Error(
+    `[VideoEmbed] Не понимаю URL видео: «${url}». Поддерживаются ` +
+      'youtube.com/watch|shorts, youtu.be, rutube.ru/video/<id>, ' +
+      'vkvideo.ru|vk.com/video<oid>_<id>.',
+  );
+}
+
+const posterUrl = poster ?? video?.posterUrl;
+const finalRatio: '16/9' | '9/16' = ratio ?? (video?.isShort ? '9/16' : '16/9');
+
+// Всё пользовательское/внешнее экранируется ПЕРЕД конкатенацией в srcdoc —
+// см. escapeHtml в lib/video-embed.ts. autoplayUrl собран парсером из
+// провалидированного id, но экранируем и его (&amp; в query обязателен).
+const safeTitle = escapeHtml(title);
+const safePlayLabel = escapeHtml(playLabel);
+const safeHref = video ? escapeHtml(video.autoplayUrl) : '';
+const safePoster = posterUrl ? escapeHtml(posterUrl) : null;
+
+// Мини-документ фасада. Токены темы сюда не достают (iframe — отдельный
+// документ), поэтому без постера body прозрачный, а заглушку на токенах
+// рисует подложка .video-embed в scoped-стилях ниже.
+const srcdoc =
+  '<style>' +
+  '*{box-sizing:border-box}html,body{height:100%;margin:0}' +
+  `body{background:${safePoster ? '#000' : 'transparent'};font-family:system-ui,sans-serif}` +
+  'a{position:absolute;inset:0;display:grid;place-items:center;color:#fff;text-decoration:none;cursor:pointer}' +
+  'img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}' +
+  'span{position:relative;display:grid;place-items:center;width:4.25rem;height:4.25rem;border-radius:50%;' +
+  'background:rgb(0 0 0/.6);box-shadow:0 10px 30px rgb(0 0 0/.35);transition:transform .15s ease,background .15s ease}' +
+  'span:before{content:"";margin-left:.3rem;border:.8rem solid transparent;border-right:0;border-left:1.3rem solid currentColor}' +
+  'a:hover span,a:focus-visible span{background:rgb(0 0 0/.85);transform:scale(1.06)}' +
+  'a:focus-visible{outline:3px solid #fff;outline-offset:-3px}' +
+  '@media (prefers-reduced-motion:reduce){span{transition:none}}' +
+  '</style>' +
+  `<a href="${safeHref}" aria-label="${safePlayLabel} ${safeTitle}">` +
+  (safePoster ? `<img src="${safePoster}" alt="${safeTitle}" decoding="async">` : '') +
+  '<span aria-hidden="true"></span></a>';
+---
+
+{
+  video ? (
+    <div class={`video-embed ${className}`} style={`aspect-ratio: ${finalRatio};`} {...rest}>
+      <iframe
+        src={video.embedUrl}
+        srcdoc={srcdoc}
+        title={title}
+        data-video-embed-url={url}
+        allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+        allowfullscreen
+        loading="lazy"
+        referrerpolicy="strict-origin-when-cross-origin"
+      />
+    </div>
+  ) : (
+    /* Прод-фолбэк для нераспознанного URL: честная внешняя ссылка вместо
+       пустого места — контент доступен, страница цела. */
+    <a class={className || undefined} href={url} rel="noopener" target="_blank" {...rest}>
+      {title}
+    </a>
+  )
+}
+
+<style>
+  .video-embed {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    /* aspect-ratio (инлайн-стилем выше) резервирует место до загрузки — CLS 0.
+       Фон — нейтральная заглушка на токенах: виден сквозь прозрачный srcdoc,
+       когда у RuTube/VK не передали poster. */
+    background: linear-gradient(
+      135deg,
+      var(--color-surface),
+      color-mix(in srgb, var(--color-ink) 14%, var(--color-surface))
+    );
+  }
+
+  .video-embed iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+</style>
+
+<script>
+  // Цель `video_play` (GOALS.VIDEO_PLAY — src/lib/analytics.ts).
+  //
+  // ВАЖНО, почему НЕ click-слушатель: кнопка play живёт ВНУТРИ srcdoc-документа
+  // iframe'а, а события не пересекают границу документов — клик по ней до
+  // родительского document не всплывёт никогда. Зато сам клик — это навигация
+  // iframe'а с about:srcdoc на видеохостинг, и её `load` ловится делегированно
+  // capture-слушателем на document (load не всплывает, но фазу погружения
+  // проходит). Слушатель один на документ (флаг window.__videoEmbedInit),
+  // живёт на document — переживает любые SPA-свопы ClientRouter.
+  if (!window.__videoEmbedInit) {
+    window.__videoEmbedInit = true;
+    document.addEventListener(
+      'load',
+      (e) => {
+        const frame = e.target;
+        if (!(frame instanceof HTMLIFrameElement)) return;
+        const url = frame.dataset.videoEmbedUrl;
+        if (!url || frame.dataset.videoEmbedTracked) return;
+        try {
+          // Пока показывается фасад, документ iframe'а same-origin
+          // (about:srcdoc) и contentDocument доступен. После клика по play
+          // внутри — плеер хостинга, cross-origin, contentDocument === null:
+          // это и есть момент запуска видео.
+          if (frame.contentDocument) return;
+        } catch {
+          /* доступ запрещён = навигация на хостинг состоялась — трекаем */
+        }
+        frame.dataset.videoEmbedTracked = '1';
+        try {
+          window.trackConversion?.('video_play', { url });
+        } catch {
+          /* аналитика никогда не ломает UX */
+        }
+      },
+      true,
+    );
+  }
+</script>

@@ -1,0 +1,163 @@
+---
+/**
+ * REVIEWS — social proof. Aggregate panel + static review cards from the
+ * `reviews` and `rating` collections (src/content/home/).
+ *
+ * On mobile, a long review is collapsed by default with a "Читать
+ * полностью"/"Свернуть" toggle (ported from a client project's ReviewsSection.astro,
+ * task W2-G) — one delegated click listener on the section root, not one
+ * per card. On desktop the text is always fully shown and the toggle button
+ * is hidden (see the `@media` block below); that's the only JS this section
+ * needs, everything else stays static.
+ *
+ * ⚠️ The on-page rating numbers are intentionally NOT mirrored into
+ * structured data: `localBusinessSchema()` (src/lib/schema.ts) deliberately
+ * omits `aggregateRating`/`review` — Google disallows a business rating
+ * itself in search results (see that function's doc-comment for the exact
+ * policy citation). Only use REAL data here regardless; it just isn't
+ * duplicated into JSON-LD.
+ */
+import { getCollection, getEntry } from 'astro:content';
+import { formatDate } from '../../lib/utils';
+
+const REVIEWS = (await getCollection('reviews')).map((e) => e.data);
+// Singleton entry — see the `rating` collection in src/content.config.ts.
+const RATING = (await getEntry('rating', 'aggregate'))!.data;
+const T = (await getEntry('sections', 'main'))!.data.reviews;
+
+interface Props {
+  eyebrow?: string;
+  title?: string;
+  /** See IntroSection's `cmsScope` — same override mechanism. */
+  cmsScope?: string;
+}
+const { eyebrow = T.eyebrow, title = T.title, cmsScope = 'sections::reviews' } = Astro.props;
+---
+<section id="reviews" class="section bg-surface">
+  <div class="container-page">
+    <div class="mx-auto max-w-2xl text-center">
+      <p class="eyebrow mb-3" data-cms={`${cmsScope}.eyebrow`}>{eyebrow}</p>
+      <h2 class="text-3xl font-bold md:text-4xl" data-cms={`${cmsScope}.title`}>{title}</h2>
+    </div>
+
+    {
+      RATING.count > 0 && (
+        <div class="mx-auto mt-8 flex max-w-md items-center justify-center gap-6 rounded-xl border border-line bg-paper p-5">
+          <div class="text-center">
+            <div class="text-3xl font-bold">{RATING.value}</div>
+            <div class="text-accent" aria-hidden="true">★★★★★</div>
+          </div>
+          <div class="h-10 w-px bg-line"></div>
+          <div class="text-sm text-muted">На основе<br />{RATING.count} отзывов</div>
+        </div>
+      )
+    }
+
+    <div class="mt-10 grid gap-6 md:grid-cols-3">
+      {
+        REVIEWS.map((r) => (
+          <figure class="review-card card p-6">
+            <div class="text-accent" aria-label={`Оценка ${r.rating} из 5`}>
+              {'★'.repeat(r.rating)}
+              <span class="text-line">{'★'.repeat(5 - r.rating)}</span>
+            </div>
+            <div class="review-fold mt-4" id={`review-fold-${r.id}`}>
+              <blockquote class="text-sm text-ink">«<span data-cms={`reviews:${r.id}:text`}>{r.text}</span>»</blockquote>
+            </div>
+            <button
+              type="button"
+              class="review-toggle mt-2 text-sm font-semibold text-accent"
+              aria-expanded="false"
+              aria-controls={`review-fold-${r.id}`}
+            >
+              <span class="review-toggle-open">Читать полностью</span>
+              <span class="review-toggle-close">Свернуть</span>
+            </button>
+            <figcaption class="mt-4 text-sm text-muted">
+              <span class="font-semibold text-ink" data-cms={`reviews:${r.id}:author`}>{r.author}</span> · {formatDate(r.date)}
+            </figcaption>
+          </figure>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .review-card {
+    display: flex;
+    flex-direction: column;
+  }
+  /* Строка автора прижата к низу — карточки с разной длиной цитаты всё
+     равно выравниваются по нижнему краю в ряду. */
+  .review-card figcaption {
+    margin-top: auto;
+  }
+
+  /* Свёрнуто по умолчанию только на мобиле (см. @media ниже) — на десктопе
+     `.review-fold` всегда полностью открыт, кнопке там нечего делать. */
+  .review-fold {
+    display: grid;
+    grid-template-rows: 1fr;
+    overflow: hidden;
+    transition: grid-template-rows 0.35s ease;
+  }
+  .review-fold > blockquote {
+    margin: 0;
+    min-height: 0;
+  }
+  .review-toggle {
+    display: none;
+    border: 0;
+    background: none;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+  }
+  .review-toggle-close {
+    display: none;
+  }
+  .review-toggle[aria-expanded='true'] .review-toggle-open {
+    display: none;
+  }
+  .review-toggle[aria-expanded='true'] .review-toggle-close {
+    display: inline;
+  }
+  @media (max-width: 768px) {
+    .review-card:not(.review-open) .review-fold {
+      grid-template-rows: 0fr;
+    }
+    .review-toggle {
+      display: inline-flex;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .review-fold {
+      transition: none;
+    }
+  }
+</style>
+
+<!-- Раскрытие карточки на мобиле. Делегирование на секцию — карточек может
+     быть много, вешать по слушателю на каждую незачем. Кнопка видима только
+     на мобильной сетке (см. @media выше) — на десктопе клик просто не
+     произойдёт, обработчику там нечего делать. -->
+<script is:inline>
+  (function () {
+    function initReviewsFold() {
+      var root = document.getElementById('reviews');
+      if (!root || root.dataset.foldBound) return;
+      root.dataset.foldBound = '1';
+      root.addEventListener('click', function (e) {
+        var btn = e.target.closest ? e.target.closest('.review-toggle') : null;
+        if (!btn) return;
+        var card = btn.closest('.review-card');
+        if (!card) return;
+        var open = card.classList.toggle('review-open');
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+    }
+    document.addEventListener('DOMContentLoaded', initReviewsFold);
+    document.addEventListener('astro:page-load', initReviewsFold);
+  })();
+</script>

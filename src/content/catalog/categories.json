@@ -1,0 +1,5 @@
+[
+  { "id": "okna", "name": "Окна", "description": "Пластиковые и алюминиевые окна", "priority": 2 },
+  { "id": "okna-plastikovye", "name": "Пластиковые окна", "parent": "okna", "priority": 1 },
+  { "id": "dveri", "name": "Двери", "description": "Входные и межкомнатные двери", "priority": 1 }
+]

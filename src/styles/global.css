@@ -1,0 +1,377 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   FONTS — self-hosted (best practice)
+   --------------------------------------------------------------------------
+   The starter ships with a robust system-font stack so it works with ZERO
+   binary assets. For production, self-host a subsetted WOFF2 (do NOT hotlink
+   Google Fonts — slower, worse privacy, GDPR/152-ФЗ concerns) and preload it
+   in BaseLayout.astro. See docs/PERFORMANCE.md → "Fonts".
+
+   Example (uncomment after adding files to src/assets/fonts/ — НЕ в public/:
+   только /_astro/-ассеты получают immutable-кэш, см. PERFORMANCE.md §3):
+
+   @font-face {
+     font-family: 'Brand Sans';
+     font-style: normal;
+     font-weight: 400 900;          // variable range — берите максимум доступного
+     font-display: swap;            // never block render on the font
+     src: url('../assets/fonts/BrandSans.woff2') format('woff2');
+     unicode-range: U+0000-00FF, U+0400-04FF;  // subset: latin + cyrillic
+   }
+   ========================================================================== */
+
+/* ==========================================================================
+   DESIGN TOKENS — Tailwind v4 @theme
+   --------------------------------------------------------------------------
+   This is the single source of truth for the brand. Rebrand a whole site by
+   editing the values below — every component consumes these tokens, never
+   hard-coded colors. Each token generates a utility:
+     --color-accent  →  bg-accent / text-accent / border-accent
+     --font-heading  →  font-heading
+     --radius-lg     →  rounded-lg
+   ========================================================================== */
+@theme {
+  /* ── Surfaces & text (light theme defaults) ── */
+  --color-paper: #ffffff;   /* page background            → bg-paper   */
+  --color-surface: #f5f5f4; /* cards, alt sections        → bg-surface */
+  --color-ink: #1a1a1a;     /* primary text               → text-ink   */
+  --color-muted: #6b7280;   /* secondary text             → text-muted */
+  --color-line: #e5e7eb;    /* borders, dividers          → border-line*/
+
+  /* ── Brand accent (change these two for instant rebrand) ── */
+  --color-accent: #c2703d;      /* CTAs, links, highlights → bg-accent */
+  --color-accent-ink: #ffffff;  /* text on accent bg  → text-accent-ink*/
+
+  /* ── Functional ── */
+  --color-danger: #dc2626;
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-info: #2563eb;
+
+  /* ── Typography ── */
+  --font-heading: 'Brand Sans', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-body: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    Helvetica, Arial, sans-serif;
+
+  /* ── Layout ── */
+  --container-max: 1200px;
+
+  /* ── Radius ── */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+}
+
+/* ==========================================================================
+   BASE
+   ========================================================================== */
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* `scroll-behavior: smooth` убрана 26.08.2026 (docs/recipes/scroll-pitfalls.md
+       §3). Она делала анимированным ЛЮБОЙ `scrollTo(0, y)` из кода, а плавную
+       прокрутку обрывает первый же чужой вызов — `ScrollTrigger.refresh()` по
+       `load`, восстановление позиции, доехавшая картинка. Доводящий цикл в
+       src/lib/scroll-to.ts пишет позицию каждый кадр, и при `smooth` каждый его
+       кадр становился новой прерванной анимацией. Плавность там, где она нужна,
+       даёт сам scroll-to.ts своей rAF-анимацией. */
+    /* Offset for the fixed header when jumping to #anchors. Reads the
+       header's real measured height (Header.astro's syncHdrH), falling back
+       to 5rem before the sync script has run (e.g. no-JS). */
+    scroll-padding-top: var(--hdr-h, 5rem);
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    line-height: 1.6;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-heading);
+    line-height: 1.15;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  a {
+    color: inherit;
+  }
+
+  ::selection {
+    background: var(--color-accent);
+    color: var(--color-accent-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+}
+
+/* ==========================================================================
+   REUSABLE COMPONENT CLASSES
+   Small, framework-agnostic primitives used across sections. Prefer Tailwind
+   utilities in markup; reach for these only for repeated multi-property
+   patterns.
+   ========================================================================== */
+
+/* Centered content container. */
+.container-page {
+  width: 100%;
+  max-width: var(--container-max);
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+@media (min-width: 768px) {
+  .container-page {
+    padding-inline: 2rem;
+  }
+}
+
+/* Section vertical rhythm. */
+.section {
+  padding-block: 4rem;
+}
+@media (min-width: 768px) {
+  .section {
+    padding-block: 6rem;
+  }
+}
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  line-height: 1;
+  transition: transform 0.15s ease, background-color 0.2s ease, color 0.2s ease,
+    border-color 0.2s ease;
+  cursor: pointer;
+  text-align: center;
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn-primary {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+.btn-primary:hover {
+  filter: brightness(0.94);
+}
+.btn-outline {
+  border: 1.5px solid currentColor;
+  color: var(--color-ink);
+}
+.btn-outline:hover {
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
+.btn-ghost {
+  color: var(--color-accent);
+}
+.btn-ghost:hover {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+/* ── Card ── */
+.card {
+  background: var(--color-paper);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* Eyebrow label above section headings. */
+.eyebrow {
+  font-family: var(--font-heading);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+/* Horizontal-scroll gallery (CSS-only, 0 JS). */
+.scroll-x {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.scroll-x > * {
+  scroll-snap-align: start;
+  flex: 0 0 auto;
+}
+
+/* FAQ accordion animation (vanilla JS toggles [hidden]/max-height). */
+.faq-answer {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s ease;
+}
+.faq-answer.open {
+  grid-template-rows: 1fr;
+}
+.faq-answer > div {
+  overflow: hidden;
+}
+
+/* Sticky stacked showcase cards. `top` здесь не задаём: StackedShowcase.astro
+   всегда проставляет его инлайн-стилем (`var(--hdr-h, 5rem)`, у второй и
+   третьей карточки — `calc(... + Nrem)`), так что статичное значение в этом
+   правиле было бы мёртвым — всегда перекрыто. Тот же дефолт-фолбэк 5rem
+   живёт у `.faq-ask` (FAQSection.astro) и `.steps-visual`/`.sit-preview`
+   (StepsSection.astro/SituationsSection.astro). */
+.stack-card {
+  position: sticky;
+  min-height: 80vh;
+}
+
+/* Mobile sticky CTA bar. Visible by default (no-JS / no-hero-found fallback —
+   see MobileStickyCTA.astro's doc-comment); `.mcta-hidden` is added/removed
+   by that component's IntersectionObserver while its hero is on screen. */
+.mobile-cta {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 40;
+  padding: 0.75rem 1rem;
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--color-paper) 92%, transparent);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--color-line);
+  transform: translateY(0);
+  transition: transform 0.3s ease;
+}
+.mobile-cta.mcta-hidden {
+  transform: translateY(110%);
+}
+/* Открыта cookie-полоса (CookieConsent.astro вешает `cookie-open` на <body>
+   и пишет туда же свою реальную высоту) — остров встаёт над полосой, а не
+   прячется под ней. Обе величины держать в синхроне с тем компонентом;
+   safe-area уже внутри --cookie-h (у полосы padding-bottom: env(...)). */
+body.cookie-open .mobile-cta {
+  bottom: var(--cookie-h, 60px);
+}
+
+/* ── Scroll-reveal system (catalogue-reference pattern) ──
+   Opt-in: add data-reveal to any element; stagger siblings with
+   style="transition-delay: 70ms". Hidden state applies ONLY under
+   html.reveal-ready (set by BaseLayout when JS is on and motion allowed),
+   so no-JS visitors, crawlers, and reduced-motion users always see content. */
+:root.reveal-ready [data-reveal] {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+:root.reveal-ready [data-reveal].is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── content-visibility: закадровые секции длинных страниц (боевой проект) ──
+   На длинной «простыне» браузер считает стиль и layout ВСЕГО документа до
+   первого кадра. `content-visibility: auto` разрешает пропускать всё вне
+   вьюпорта и досчитывать по мере приближения — на боевом проекте это срезало
+   основную часть style/layout-задержки первого кадра (~600 мс при CPU 4x).
+
+   Опт-ин: класс `cv-auto` на закадровые секции + пер-секционная переменная
+   --cv-h с ФАКТИЧЕСКОЙ высотой контента (мерить в devtools на десктопе и
+   мобиле; keyword `auto` запомнит реальную высоту после первого рендера,
+   число работает лишь до него; враньё в числе = дёргающийся скроллбар).
+
+   Что важно не сломать:
+   • Секции с пином ScrollTrigger НЕ помечать — пин меряет высоту секции,
+     пропуск рендера ломает расчёт длины пина.
+   • `:root.cv-off` — предохранитель для якорей (скрипт в BaseLayout.astro):
+     прыжок по #hash считается по оценочным высотам, поэтому первое же
+     якорное взаимодействие снимает оптимизацию со страницы. */
+@supports (content-visibility: auto) {
+  .cv-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: auto var(--cv-h, 1000px);
+  }
+  :root.cv-off .cv-auto {
+    content-visibility: visible;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ==========================================================================
+   PH-SLOT — плейсхолдер ассета (силуэт из SilhouetteSprite.astro)
+   --------------------------------------------------------------------------
+   `.ph`/`.ph-slot`/`.ph-slot.clay` — блок под фото/иллюстрацию, которых ещё
+   нет: тонированная плашка с силуэтом по центру вместо серого прямоугольника
+   или сломанной картинки. Портировано с боевого проекта; фон собран из
+   существующих токенов темы через color-mix(), поэтому работает с любым
+   --color-accent без новых переменных в @theme.
+
+   Разметка:
+     <span class="ph ph-slot" role="img" aria-label="…">
+       <svg style="color:var(--color-accent)" aria-hidden="true">
+         <use href="#sl-coin" />
+       </svg>
+     </span>
+   Цвет силуэта задаётся инлайновым `color` на потребляющем <svg> (см.
+   комментарий в SilhouetteSprite.astro) — сам `.ph-slot` красит только фон.
+   `.clay` — светлый вариант плашки (для карточек на тёмном фоне секции).
+   `@layer components`, чтобы утилити-классы Tailwind по умолчанию побеждали
+   по порядку источников, если это когда-нибудь понадобится. */
+@layer components {
+  .ph {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    background: var(--color-ink);
+  }
+  .ph-slot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background:
+      radial-gradient(120% 85% at 50% 8%, color-mix(in srgb, var(--color-accent) 22%, transparent), transparent 62%),
+      radial-gradient(140% 110% at 50% 112%, color-mix(in srgb, black 45%, transparent), transparent 60%),
+      var(--color-ink);
+  }
+  .ph-slot svg {
+    width: 64%;
+    aspect-ratio: 4 / 3;
+    height: auto;
+    max-height: 72%;
+    display: block;
+  }
+  .ph-slot.clay {
+    background:
+      radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--color-accent) 25%, transparent), transparent 55%),
+      var(--color-surface);
+  }
+}

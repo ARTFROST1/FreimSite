@@ -1,0 +1,449 @@
+---
+/**
+ * Dropdown — кнопка с выпадающим меню (адаптация starwind-ui dropdown, MIT;
+ * их 12 подкомпонентов свёрнуты в один декларативный API).
+ *
+ * Использование:
+ *   <Dropdown
+ *     label="Каталог"
+ *     items={[
+ *       { label: 'Диваны', href: '/catalog/sofas/' },
+ *       { label: 'Заказать звонок', goal: 'cta_click' },
+ *     ]}
+ *   />
+ *
+ * `goal` → window.trackConversion?.(goal) при клике (имена целей —
+ * src/lib/analytics.ts GOALS); пункт без `href` рендерится кнопкой.
+ *
+ * Доступность (WAI-APG menu button):
+ *   • кнопка: aria-haspopup="menu" + aria-expanded + aria-controls;
+ *   • меню: role="menu" / role="menuitem", roving tabindex;
+ *   • ArrowDown/ArrowUp на кнопке открывают меню с фокусом на первом/последнем
+ *     пункте; в меню — стрелки по кругу, Home/End, Space активирует ссылку;
+ *   • Escape закрывает и возвращает фокус на кнопку; клик-вне и уход фокуса
+ *     закрывают без возврата фокуса.
+ *
+ * Меню на время показа ПОРТАЛИРУЕТСЯ в <body> (fixed-координаты от
+ * computePosition честны только там — transform на предке, например
+ * отработавший data-reveal, делает fixed локальным); flip/shift у краёв
+ * вьюпорта — src/lib/positioning.ts. Анимация только под no-preference.
+ *
+ * SPA-safe: document-слушатели один раз (__dropdownInit, объявлен в
+ * env.d.ts — общий дом флагов), ARIA-связка по готовности DOM и на каждый
+ * astro:page-load, scroll/resize открытого меню чистятся AbortController'ом.
+ *
+ * ВНИМАНИЕ к именованию: здесь `label` — ВИДИМЫЙ текст кнопки-триггера
+ * (в Carousel/Tabs одноимённый проп — aria-label региона/списка).
+ */
+interface DropdownItem {
+  label: string;
+  href?: string;
+  /** Цель Метрики из GOALS — отправится при клике по пункту. */
+  goal?: string;
+}
+
+interface Props {
+  /** Видимый текст кнопки-триггера (НЕ aria-label). */
+  label: string;
+  items: DropdownItem[];
+  class?: string;
+}
+
+const { label, items, class: className } = Astro.props;
+---
+
+<div class:list={['dd', className]} data-dd>
+  <button type="button" class="dd-btn" aria-haspopup="menu" aria-expanded="false">
+    <span>{label}</span>
+    <svg
+      class="dd-chev"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m6 9 6 6 6-6"></path>
+    </svg>
+  </button>
+  <div class="dd-menu" role="menu" hidden>
+    {
+      items.map((item) =>
+        item.href ? (
+          <a
+            class="dd-item"
+            role="menuitem"
+            tabindex="-1"
+            href={item.href}
+            data-goal={item.goal || undefined}
+          >
+            {item.label}
+          </a>
+        ) : (
+          <button
+            class="dd-item"
+            type="button"
+            role="menuitem"
+            tabindex="-1"
+            data-goal={item.goal || undefined}
+          >
+            {item.label}
+          </button>
+        ),
+      )
+    }
+  </div>
+</div>
+
+<style>
+  .dd {
+    display: inline-block;
+  }
+
+  .dd-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-size: 0.9rem;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+  .dd-btn:hover,
+  .dd-btn[aria-expanded='true'] {
+    background: var(--color-surface);
+  }
+
+  .dd-chev {
+    flex: none;
+    color: var(--color-muted);
+  }
+  .dd-btn[aria-expanded='true'] .dd-chev {
+    transform: rotate(180deg);
+  }
+
+  .dd-menu {
+    /* Координаты вьюпортные (computePosition), меню на время показа живёт
+       прямым потомком <body> — см. doc-комментарий. */
+    position: fixed;
+    z-index: 80; /* выше контента, ниже тултипа (90) и лайтбокса (100) */
+    min-width: 11rem;
+    max-width: min(20rem, calc(100vw - 1rem));
+    padding: 0.375rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    background: var(--color-paper);
+    box-shadow: 0 12px 32px rgb(0 0 0 / 0.14);
+  }
+
+  .dd-item {
+    display: block;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--color-ink);
+    font-size: 0.9rem;
+    line-height: 1.4;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .dd-item:hover,
+  .dd-item:focus-visible {
+    background: var(--color-surface);
+    outline: none;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .dd-chev {
+      transition: transform 0.15s ease;
+    }
+    .dd-menu {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+      transition:
+        opacity 0.12s ease,
+        transform 0.12s ease;
+    }
+    .dd-menu[data-dd-side='top'] {
+      transform: translateY(4px) scale(0.98);
+      transform-origin: center bottom;
+    }
+    .dd-menu[data-dd-side='bottom'] {
+      transform-origin: center top;
+    }
+    .dd-menu.dd-open {
+      opacity: 1;
+      transform: none;
+    }
+  }
+</style>
+
+<script>
+  import { computePosition } from '../../lib/positioning';
+
+  const ANIM_MS = 130; // чуть больше transition (120 мс)
+
+  interface OpenMenu {
+    root: HTMLElement;
+    btn: HTMLElement;
+    menu: HTMLElement;
+    placeholder: Comment;
+    ctrl: AbortController;
+    items: HTMLElement[];
+  }
+
+  let open: OpenMenu | null = null;
+  let animTimer = 0;
+  /**
+   * Отложенный «вернуть меню на место» закрывающегося меню. Пока идёт
+   * exit-анимация, `open === null`, но меню ещё портализовано в <body>;
+   * голый clearTimeout при открытии следующего меню оставил бы его там
+   * навсегда (невидимый кликабельный слой, под reduce — видимый «призрак»).
+   */
+  let pendingFinalize: (() => void) | null = null;
+  let counter = 0;
+
+  /** Добить незавершённое закрытие синхронно (перед новым открытием). */
+  function flushPending() {
+    window.clearTimeout(animTimer);
+    const fin = pendingFinalize;
+    pendingFinalize = null;
+    fin?.();
+  }
+
+  const raf: (cb: () => void) => void =
+    typeof window.requestAnimationFrame === 'function'
+      ? (cb) => window.requestAnimationFrame(() => cb())
+      : (cb) => cb();
+
+  function position() {
+    if (!open) return;
+    const pos = computePosition(open.btn, open.menu, {
+      placement: 'bottom',
+      offset: 6,
+      padding: 8,
+    });
+    open.menu.style.left = `${Math.round(pos.left)}px`;
+    open.menu.style.top = `${Math.round(pos.top)}px`;
+    open.menu.setAttribute('data-dd-side', pos.placement);
+  }
+
+  function openMenu(btn: HTMLElement) {
+    if (open) closeMenu({ immediate: true });
+    // Предыдущее меню могло ещё доигрывать exit-анимацию — добиваем ДО поиска
+    // своего меню: если это та же кнопка, её меню сейчас портализовано в
+    // <body> и querySelector по корню его не найдёт.
+    flushPending();
+
+    const root = btn.closest<HTMLElement>('[data-dd]');
+    const menu = root?.querySelector<HTMLElement>('.dd-menu');
+    if (!root || !menu) return;
+
+    // Портал в <body> с меткой-закладкой для возврата на место.
+    const placeholder = document.createComment('dd-placeholder');
+    menu.before(placeholder);
+    document.body.appendChild(menu);
+    menu.hidden = false;
+
+    const ctrl = new AbortController();
+    open = {
+      root,
+      btn,
+      menu,
+      placeholder,
+      ctrl,
+      items: Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]')),
+    };
+    btn.setAttribute('aria-expanded', 'true');
+
+    position();
+    raf(() => {
+      if (open?.menu !== menu) return;
+      position(); // второй замер — уже с финальными размерами меню
+      menu.classList.add('dd-open');
+    });
+
+    window.addEventListener('resize', position, { signal: ctrl.signal });
+    window.addEventListener('scroll', position, { signal: ctrl.signal, capture: true, passive: true });
+  }
+
+  function closeMenu(opts: { focusBtn?: boolean; immediate?: boolean } = {}) {
+    if (!open) return;
+    const { btn, menu, placeholder, ctrl } = open;
+    open = null;
+    ctrl.abort();
+    btn.setAttribute('aria-expanded', 'false');
+    menu.classList.remove('dd-open');
+
+    const finalize = () => {
+      menu.hidden = true;
+      menu.style.removeProperty('left');
+      menu.style.removeProperty('top');
+      placeholder.parentNode?.insertBefore(menu, placeholder);
+      placeholder.remove();
+    };
+
+    flushPending();
+    if (opts.immediate) {
+      finalize();
+    } else {
+      pendingFinalize = finalize;
+      animTimer = window.setTimeout(() => {
+        pendingFinalize = null;
+        finalize();
+      }, ANIM_MS);
+    }
+
+    if (opts.focusBtn) btn.focus();
+  }
+
+  /** Roving focus с заворотом: -1 → последний, length → первый. */
+  function focusItem(idx: number) {
+    if (!open || open.items.length === 0) return;
+    const n = open.items.length;
+    open.items[((idx % n) + n) % n].focus();
+  }
+
+  function fireGoal(item: HTMLElement) {
+    const goal = item.getAttribute('data-goal');
+    if (!goal) return;
+    try {
+      window.trackConversion?.(goal);
+    } catch {
+      /* аналитика не должна ломать клик по пункту */
+    }
+  }
+
+  /** Пер-страничная ARIA-связка кнопка↔меню (id генерируются здесь, чтобы
+   *  инстансы компонента не согласовывали счётчик между собой). */
+  function initDropdowns() {
+    document.querySelectorAll<HTMLElement>('[data-dd]:not([data-dd-ready])').forEach((root) => {
+      root.setAttribute('data-dd-ready', '');
+      const btn = root.querySelector<HTMLElement>('.dd-btn');
+      const menu = root.querySelector<HTMLElement>('.dd-menu');
+      if (!btn || !menu) return;
+      counter += 1;
+      if (!btn.id) btn.id = `dd-btn-${counter}`;
+      if (!menu.id) menu.id = `dd-menu-${counter}`;
+      btn.setAttribute('aria-controls', menu.id);
+      menu.setAttribute('aria-labelledby', btn.id);
+    });
+  }
+
+  if (!window.__dropdownInit) {
+    window.__dropdownInit = true;
+
+    // ЗАПУСК: как у Carousel/BeforeAfter — на первичной загрузке
+    // astro:page-load приходит лишь по window.load, стартуем по готовности
+    // DOM; page-load остаётся для SPA-переходов. Повтор безопасен: data-dd-ready.
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initDropdowns, { once: true });
+    } else {
+      initDropdowns();
+    }
+    document.addEventListener('astro:page-load', initDropdowns);
+
+    // Всё делегировано на document: клики, клавиатура, уход фокуса.
+    document.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      const btn = target.closest?.('.dd-btn') as HTMLElement | null;
+      if (btn) {
+        if (open?.btn === btn) {
+          closeMenu();
+        } else {
+          openMenu(btn);
+          // e.detail === 0 — активация с клавиатуры (Enter/Space): по APG
+          // фокус уходит на первый пункт; мышиный клик фокус не трогает.
+          if (e.detail === 0) focusItem(0);
+        }
+        return;
+      }
+
+      if (!open) return;
+
+      const item = target.closest?.('[role="menuitem"]') as HTMLElement | null;
+      if (item && open.menu.contains(item)) {
+        fireGoal(item);
+        // Ссылка навигирует сама; кнопочному пункту возвращаем фокус на триггер.
+        closeMenu({ focusBtn: item.tagName !== 'A' });
+        return;
+      }
+
+      if (!open.root.contains(target) && !open.menu.contains(target)) closeMenu();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (open) {
+          e.preventDefault();
+          closeMenu({ focusBtn: true });
+        }
+        return;
+      }
+
+      const target = e.target instanceof HTMLElement ? e.target : null;
+
+      const btn = target?.closest?.('.dd-btn') as HTMLElement | null;
+      if (btn && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        e.preventDefault();
+        if (open?.btn !== btn) openMenu(btn);
+        focusItem(e.key === 'ArrowDown' ? 0 : -1);
+        return;
+      }
+
+      if (!open || !target || !open.menu.contains(target)) return;
+      const item = target.closest?.('[role="menuitem"]') as HTMLElement | null;
+      const idx = item ? open.items.indexOf(item) : -1;
+
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault();
+          focusItem(idx + 1);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          focusItem(idx - 1);
+          break;
+        case 'Home':
+          e.preventDefault();
+          focusItem(0);
+          break;
+        case 'End':
+          e.preventDefault();
+          focusItem(-1);
+          break;
+        case ' ':
+          // Space на <a role="menuitem"> сам по себе ссылку не активирует.
+          if (item && item.tagName === 'A') {
+            e.preventDefault();
+            item.click();
+          }
+          break;
+      }
+    });
+
+    // Фокус ушёл из группы (Tab с последнего пункта и т.п.) — закрываемся.
+    document.addEventListener('focusin', (e) => {
+      if (!open) return;
+      const target = e.target as Node | null;
+      if (target && !open.root.contains(target) && !open.menu.contains(target)) closeMenu();
+    });
+
+    // Меню не должно пережить SPA-навигацию портализованным в <body>.
+    document.addEventListener('astro:before-swap', () => closeMenu({ immediate: true }));
+  }
+</script>

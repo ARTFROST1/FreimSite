@@ -1,0 +1,27 @@
+---
+/**
+ * Renders one or more schema.org objects as a JSON-LD <script>.
+ * Usage:
+ *   <JsonLd schema={organizationSchema()} />
+ *   <JsonLd schema={[webSiteSchema(), faqSchema(items)]} />
+ *
+ * SECURITY: `set:html` is Astro's opt-out of escaping, so the payload MUST be
+ * produced by `serializeJsonLd` — plain `JSON.stringify` leaves `<`/`>` intact
+ * and a CMS-editable string containing `</script>` would close this block and
+ * execute arbitrary JS on the client's site (audit H-4). See lib/json-ld.ts
+ * for why this is the layer that matters even though the portal also rejects
+ * `</` on save.
+ */
+import { serializeJsonLd } from '../../lib/json-ld';
+
+interface Props {
+  schema: Record<string, unknown> | Record<string, unknown>[];
+}
+const { schema } = Astro.props;
+const items = Array.isArray(schema) ? schema : [schema];
+---
+{
+  items.map((item) => (
+    <script is:inline type="application/ld+json" set:html={serializeJsonLd(item)} />
+  ))
+}

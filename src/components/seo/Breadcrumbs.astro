@@ -1,0 +1,38 @@
+---
+/**
+ * Visible breadcrumb trail. The matching BreadcrumbList JSON-LD is emitted
+ * centrally in BaseLayout (auto-derived from the URL), so this component is
+ * markup-only — no structured data here, to avoid duplicate schema.
+ */
+interface Crumb {
+  name: string;
+  url?: string;
+}
+interface Props {
+  items: Crumb[];
+  class?: string;
+}
+const { items, class: className = '' } = Astro.props;
+---
+{
+  items.length > 1 && (
+    <nav aria-label="Хлебные крошки" class={`text-sm text-muted ${className}`}>
+      <ol class="flex flex-wrap items-center gap-2">
+        {items.map((item, i) => (
+          <li class="flex items-center gap-2">
+            {item.url && i < items.length - 1 ? (
+              <a href={item.url} class="hover:text-accent transition-colors">
+                {item.name}
+              </a>
+            ) : (
+              <span aria-current="page" class="text-ink">
+                {item.name}
+              </span>
+            )}
+            {i < items.length - 1 && <span class="text-line">/</span>}
+          </li>
+        ))}
+      </ol>
+    </nav>
+  )
+}

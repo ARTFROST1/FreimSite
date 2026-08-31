@@ -1,0 +1,461 @@
+---
+/**
+ * ============================================================================
+ *  STEPS — таймлайн «как мы работаем»: заполняющаяся линия прогресса + sticky-
+ *  панель, чья иллюстрация переключается вместе с активным шагом.
+ * ----------------------------------------------------------------------------
+ *  Портировано с боевого проекта, `StepsSection.astro` (:356-440, markup + CSS +
+ *  скролл-логика) — тот же приём, БЕЗ GSAP: исходный прототип гнал заполнение линии
+ *  через `ScrollTrigger.create({ trigger, start:'top 72%', end:'bottom 42%',
+ *  onUpdate })`, здесь тот же эффект посчитан вручную из
+ *  `getBoundingClientRect()`. Чистая формула вынесена в
+ *  `src/lib/scroll-progress.ts` (`stepsProgress`/`activeStepIndex`, оба
+ *  покрыты тестом) — то же разделение, что у `scroll-to.ts`/`LeadSection`.
+ *
+ *  ПОРОГИ `startVh`/`spanVh` — пропсы (не хардкод), можно подстроить под
+ *  секцию с более длинным/коротким списком шагов без правки скрипта.
+ *
+ *  АКТИВНЫЙ ШАГ / ИЛЛЮСТРАЦИЯ. `setActive(i)` переключает `.step.is-active`,
+ *  `.sv-frame.is-show` и подпись `sv-cap` — читает `textContent` уже
+ *  отрендеренного `<h3>` активного шага (один источник правды, без
+ *  дублирования текста в JS). Каждый шаг — `<button>`, кликабелен независимо
+ *  от скролл-прогресса (клавиатура работает сама по себе, это нативная
+ *  кнопка).
+ *
+ *  SPA-safe: module-scope `cleanup` снимает `scroll`/`resize`-листенеры на
+ *  `astro:before-swap` (канон стартера — `docs/recipes/animations-motion.md
+ *  §2`, тот же паттерн, что `ScrollScene.astro`), переинициализация — на
+ *  `astro:page-load`. Секция мультиинстанс-safe: каждый корень
+ *  `[data-steps]` на странице получает свой набор листенеров и не путает
+ *  чужие узлы (см. `LeadSection.astro` за тем же приёмом).
+ *
+ *  REDUCED MOTION / NO-JS. `prefers-reduced-motion: reduce` — скролл-
+ *  листенер не вешается вовсе, линия становится `transform: none`
+ *  (полностью заполнена, статично), ВСЕ шаги получают `.is-active`
+ *  (полная непрозрачность), иллюстрация остаётся первой. Без JS вовсе
+ *  (краулер) — то же видно из голой разметки: первый `<button>` и первый
+ *  `.sv-frame` уже помечены активными в шаблоне, линия по умолчанию
+ *  невидима (`.steps-line b { transform: scaleY(0) }` ниже).
+ *
+ *  ИЛЛЮСТРАЦИИ — плейсхолдеры. Каждый шаг рисуется в `.ph.ph-slot`
+ *  (`src/styles/global.css` — см. doc-comment там, класс уже несёт фон и
+ *  размер иконки). Пропс `icon` — id символа из `SilhouetteSprite.astro`
+ *  (появился в этой же ветке, W2-H): подключите `<SilhouetteSprite />` один
+ *  раз на страницу выше секций, использующих силуэты. Готовое фото/
+ *  иллюстрация — пропс `image` (ключ реестра или `ImageMetadata`), рендерится
+ *  через `ContentImage` и перекрывает силуэт для конкретного шага.
+ *
+ *  КОНТЕНТ. `steps` — пропс с локальным демо-массивом по умолчанию (как
+ *  `images` у `GallerySection.astro`), НЕ отдельная content-коллекция:
+ *  заводить `steps.json`/схему — вне периметра этой задачи (тот же выбор,
+ *  что `askTitle`/`askText` в `FAQSection.astro` — см. doc-comment там).
+ *  `eyebrow`/`title` — плюс пропсы, тоже без CMS-обвязки: в
+ *  `sectionTextsSchema` нет поля под этот блок, добавлять его сюда не
+ *  входит в задачу; подключить `data-cms` к новому полю схемы можно позже,
+ *  не трогая эту секцию.
+ * ============================================================================
+ */
+import ContentImage from '../ui/ContentImage.astro';
+import type { ImageMetadata } from 'astro';
+
+export interface Step {
+  title: string;
+  description: string;
+  /** Короткий чип у шага (например, срок) — необязателен. */
+  tag?: string;
+  /** id символа `SilhouetteSprite` (`sl-phone`, `sl-calcpad`, …). Игнорируется,
+   *  если задан `image`. */
+  icon?: string;
+  /** Готовое фото/иллюстрация — ключ реестра, публичный путь или
+   *  `ImageMetadata`. Перекрывает `icon` для этого шага. */
+  image?: ImageMetadata | string;
+}
+
+/** Демо-набор: нейтральные силуэты из `SilhouetteSprite` без товарной
+ *  специфики — годится как заглушка для любого проекта на этом стартере. */
+const DEMO_STEPS: Step[] = [
+  { title: 'Шаг 1', description: 'Короткое пояснение шага. Одно-два предложения.', tag: '1 день', icon: 'sl-phone' },
+  { title: 'Шаг 2', description: 'Короткое пояснение шага. Одно-два предложения.', icon: 'sl-calcpad' },
+  { title: 'Шаг 3', description: 'Короткое пояснение шага. Одно-два предложения.', icon: 'sl-swatch' },
+  { title: 'Шаг 4', description: 'Короткое пояснение шага. Одно-два предложения.', tag: 'Договор', icon: 'sl-stamp' },
+  { title: 'Шаг 5', description: 'Короткое пояснение шага. Одно-два предложения.', icon: 'sl-frame' },
+  { title: 'Шаг 6', description: 'Короткое пояснение шага. Одно-два предложения.', icon: 'sl-van' },
+];
+
+interface Props {
+  eyebrow?: string;
+  title?: string;
+  steps?: Step[];
+  /** `id` секции, если нужен якорь. */
+  id?: string;
+  /** См. doc-comment `scroll-progress.ts`: доля экрана, где стартует
+   *  заполнение линии. */
+  startVh?: number;
+  /** См. doc-comment `scroll-progress.ts`: доля экрана, добавляемая к длине
+   *  коридора прогресса. */
+  spanVh?: number;
+}
+
+const {
+  eyebrow = 'Как мы работаем',
+  title = 'Путь от заявки до результата',
+  steps = DEMO_STEPS,
+  id,
+  startVh = 0.72,
+  spanVh = 0.3,
+} = Astro.props;
+
+if (!steps.length) throw new Error('<StepsSection>: нужен непустой массив steps');
+---
+
+<section id={id} class="section">
+  <div class="container-page">
+    <div class="mx-auto max-w-2xl text-center" data-reveal>
+      <p class="eyebrow mb-3">{eyebrow}</p>
+      <h2 class="text-3xl font-bold md:text-4xl">{title}</h2>
+    </div>
+
+    <div class="steps-grid mt-12" data-steps>
+      <div class="steps" data-progress-track data-start-vh={startVh} data-span-vh={spanVh} data-reveal>
+        <span class="steps-line" aria-hidden="true"><b data-progress-fill></b></span>
+        {
+          steps.map((step, i) => (
+            <button
+              type="button"
+              class={`step ${i === 0 ? 'is-active' : ''}`}
+              data-progress-item
+              aria-pressed={i === 0 ? 'true' : 'false'}
+            >
+              <span class="step-num" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
+              <span class="step-body">
+                <h3 class="text-lg font-semibold">{step.title}</h3>
+                <p class="mt-1 text-sm text-muted">{step.description}</p>
+              </span>
+              {step.tag && (
+                <span class="tag inline-flex items-center rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
+                  {step.tag}
+                </span>
+              )}
+            </button>
+          ))
+        }
+      </div>
+
+      <div class="steps-visual" data-steps-visual aria-hidden="true" data-reveal>
+        <div class="sv-stage">
+          {
+            steps.map((step, i) => (
+              <span class={`ph ph-slot sv-frame ${i === 0 ? 'is-show' : ''}`}>
+                {step.image ? (
+                  <ContentImage
+                    src={step.image}
+                    alt=""
+                    widths={[240, 360, 480]}
+                    sizes="(min-width: 900px) 360px, 60vw"
+                    loading="lazy"
+                    class="sv-frame-img"
+                  />
+                ) : (
+                  step.icon && (
+                    <svg style="color:var(--color-accent)">
+                      <use href={`#${step.icon}`} />
+                    </svg>
+                  )
+                )}
+              </span>
+            ))
+          }
+        </div>
+        <div class="sv-cap">
+          <span data-sv-cap-title>{steps[0]?.title}</span>
+          <span data-sv-cap-n>Шаг 1 из {steps.length}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* Общая скоба для геометрии: без токенов темы, локальная переменная под
+     плавность переходов таймлайна. */
+  .steps-grid {
+    --steps-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: clamp(28px, 4vw, 64px);
+    align-items: start;
+  }
+
+  /* ---------- список шагов + заполняющаяся линия ---------- */
+  .steps {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    padding-left: 34px;
+  }
+  .steps-line {
+    position: absolute;
+    left: 10px;
+    top: 26px;
+    bottom: 26px;
+    width: 3px;
+    border-radius: 99px;
+    background: var(--color-line);
+    overflow: hidden;
+  }
+  .steps-line b {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 99px;
+    background: var(--color-accent);
+    transform: scaleY(0);
+    transform-origin: top;
+    will-change: transform;
+  }
+  .step {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    padding: 17px 8px;
+    border: none;
+    border-bottom: 1px solid var(--color-line);
+    background: none;
+    font: inherit;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+    transition: opacity 0.5s var(--steps-ease);
+    opacity: 0.55;
+  }
+  .step.is-active {
+    opacity: 1;
+  }
+  .step:last-child {
+    border-bottom: none;
+  }
+  .step:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  /* Точка на линии, наравне с активным шагом. */
+  .step::after {
+    content: '';
+    position: absolute;
+    left: -30px;
+    top: 50%;
+    margin-top: -6px;
+    width: 12px;
+    height: 12px;
+    border-radius: 99px;
+    background: var(--color-paper);
+    border: 3px solid var(--color-line);
+    transition: border-color 0.4s var(--steps-ease), transform 0.4s var(--steps-ease);
+  }
+  .step.is-active::after {
+    border-color: var(--color-accent);
+    transform: scale(1.15);
+  }
+  /* Порядковый номер шага — из разметки (не CSS-счётчик), чтобы индекс не
+     разъезжался с `titles`/`activeStepIndex` в скрипте при любых будущих
+     фильтрах/условном рендере шагов. */
+  .step-num {
+    flex-shrink: 0;
+    min-width: 30px;
+    font-family: var(--font-heading);
+    font-weight: 900;
+    font-size: 1.15rem;
+    letter-spacing: -0.02em;
+    color: var(--color-ink);
+    opacity: 0.35;
+    transition: color 0.4s var(--steps-ease), opacity 0.4s var(--steps-ease);
+  }
+  .step.is-active .step-num {
+    color: var(--color-accent);
+    opacity: 1;
+  }
+  .step-body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* ---------- sticky-панель с иллюстрацией активного шага ---------- */
+  .steps-visual {
+    position: sticky;
+    /* Синхронизировано с реальной высотой шапки (`--hdr-h`, см.
+       Header.astro); 5rem — тот же дефолт-фолбэк, что у
+       `.faq-ask`/`.sit-preview` (FAQSection.astro/SituationsSection.astro),
+       на случай, если переменная ещё не выставлена. */
+    top: var(--hdr-h, 5rem);
+    padding: 10px;
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+  }
+  .sv-stage {
+    position: relative;
+    aspect-ratio: 4 / 3;
+    border-radius: calc(var(--radius-lg) - 4px);
+    overflow: hidden;
+  }
+  /* Кроссфейд слотов: `.ph`/`.ph-slot` из global.css задают фон и размер
+     иконки внутри — здесь только позиционирование и переход между кадрами
+     (второй `.ph` в стеке иначе лежал бы под первым в потоке документа). */
+  .sv-frame {
+    position: absolute;
+    inset: 0;
+    height: 100%;
+    opacity: 0;
+    transform: scale(1.04);
+    transition: opacity 0.6s var(--steps-ease), transform 0.9s var(--steps-ease);
+  }
+  .sv-frame.is-show {
+    opacity: 1;
+    transform: none;
+  }
+  .sv-frame-img {
+    width: 72%;
+    height: auto;
+    max-height: 86%;
+    object-fit: contain;
+    display: block;
+  }
+  .sv-cap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 14px;
+    padding: 12px 8px 4px;
+  }
+  .sv-cap [data-sv-cap-n] {
+    color: var(--color-accent);
+    font-size: 12.5px;
+    letter-spacing: 0.06em;
+  }
+
+  @media (max-width: 900px) {
+    .steps-grid {
+      grid-template-columns: 1fr;
+    }
+    .steps-visual {
+      display: none;
+    }
+  }
+
+  @media (max-width: 480px) {
+    /* Чип срока не влезает рядом с текстом на узком экране — прячем, сам
+       текст шага важнее (то же решение, что на боевом проекте при 640px). */
+    .tag {
+      display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .step {
+      opacity: 1;
+    }
+  }
+</style>
+
+<script>
+  import { activeStepIndex, stepsProgress } from '../../lib/scroll-progress';
+
+  /**
+   * Скролл-прогресс таймлайна: см. doc-comment файла и `scroll-progress.ts`.
+   * SPA-safe module-scope cleanup — тот же паттерн, что `ScrollScene.astro`.
+   */
+  const cleanups: Array<() => void> = [];
+
+  function teardown(): void {
+    while (cleanups.length) cleanups.pop()!();
+  }
+  document.addEventListener('astro:before-swap', teardown);
+
+  function initOne(root: HTMLElement): void {
+    const track = root.querySelector<HTMLElement>('[data-progress-track]');
+    const fill = root.querySelector<HTMLElement>('[data-progress-fill]');
+    const items = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-progress-item]'));
+    const frames = Array.from(root.querySelectorAll<HTMLElement>('.sv-frame'));
+    const capTitle = root.querySelector<HTMLElement>('[data-sv-cap-title]');
+    const capN = root.querySelector<HTMLElement>('[data-sv-cap-n]');
+    if (!track || !fill || !items.length) return;
+
+    const titles = items.map((el) => el.querySelector('h3')?.textContent?.trim() ?? '');
+    const total = items.length;
+    let current = -1;
+
+    function setActive(i: number): void {
+      i = Math.min(total - 1, Math.max(0, i));
+      if (i === current) return;
+      current = i;
+      items.forEach((el, j) => {
+        el.classList.toggle('is-active', j === i);
+        el.setAttribute('aria-pressed', j === i ? 'true' : 'false');
+      });
+      frames.forEach((el, j) => el.classList.toggle('is-show', j === i));
+      if (capTitle) capTitle.textContent = titles[i] ?? '';
+      if (capN) capN.textContent = `Шаг ${i + 1} из ${total}`;
+    }
+    setActive(0);
+
+    items.forEach((el, i) => {
+      el.addEventListener('click', () => setActive(i));
+    });
+
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    if (reduce) {
+      fill.style.transform = 'none';
+      items.forEach((el) => {
+        el.classList.add('is-active');
+        el.setAttribute('aria-pressed', 'true');
+      });
+      return; // линия статична, без скролл-прогресса — см. doc-comment файла
+    }
+
+    const startVh = Number(track.dataset.startVh ?? '0.72');
+    const spanVh = Number(track.dataset.spanVh ?? '0.3');
+
+    function update(): void {
+      const rect = track!.getBoundingClientRect();
+      const progress = stepsProgress({
+        top: rect.top,
+        height: rect.height,
+        viewportHeight: window.innerHeight,
+        startVh,
+        spanVh,
+      });
+      fill!.style.transform = `scaleY(${progress.toFixed(4)})`;
+      setActive(activeStepIndex(progress, total));
+    }
+
+    let ticking = false;
+    function onScroll(): void {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        update();
+        ticking = false;
+      });
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    update();
+
+    cleanups.push(() => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    });
+  }
+
+  function init(): void {
+    teardown();
+    document.querySelectorAll<HTMLElement>('[data-steps]').forEach(initOne);
+  }
+
+  document.addEventListener('astro:page-load', init);
+</script>

@@ -1,0 +1,50 @@
+# FreimSite
+
+> The official site template for Freim Deploy — a production-grade Astro 7 starter:
+> SEO done properly, islands (zero JavaScript by default), twenty content collections
+> validated with Zod, and a click-to-edit CMS contract out of the box. A repository
+> becomes a live site through Freim Deploy, and a client then edits their own content
+> through the CMS portal by clicking on the live page — no admin backend, no code editor.
+
+> **Naming note:** the deploy config file in this repository is called
+> `frostdeploy.json`, not `freimsite.json`. That is deliberate, not a mistake: Freim
+> Deploy — the platform this template deploys to — used to be called FrostDeploy, and
+> servers already running that platform in the field read this exact filename to find
+> their own updates. The name never changes. Never write `freimsite.json` or
+> `freim-deploy.json`; the file is and stays `frostdeploy.json`.
+
+Get started (as a working directory, not a server):
+
+```
+git clone https://github.com/ARTFROST1/FreimSite.git my-site
+cd my-site
+npm install
+npm run dev
+```
+
+## Docs
+
+- [README.md](https://github.com/ARTFROST1/FreimSite/blob/main/README.md): overview, quick start, what the template gives you, the CMS chain, deploy, license
+- [README.ru.md](https://github.com/ARTFROST1/FreimSite/blob/main/README.ru.md): the same in Russian
+- [docs/en/quick-start.md](https://github.com/ARTFROST1/FreimSite/blob/main/docs/en/quick-start.md): install, run, the command reference, what the demo site ships with
+- [docs/en/structure.md](https://github.com/ARTFROST1/FreimSite/blob/main/docs/en/structure.md): the directory map, and why most of the site ships zero JavaScript (islands)
+- [docs/en/content.md](https://github.com/ARTFROST1/FreimSite/blob/main/docs/en/content.md): content collections, the Zod schemas behind them, adding your own
+- [docs/en/cms.md](https://github.com/ARTFROST1/FreimSite/blob/main/docs/en/cms.md): the `content.schema.json` / `data-cms` / `fd-edit.js` contract that lets a client edit content through the portal
+- [docs/en/deploy.md](https://github.com/ARTFROST1/FreimSite/blob/main/docs/en/deploy.md): `frostdeploy.json` field by field, and why its name never changes
+- [AGENTS.md](https://github.com/ARTFROST1/FreimSite/blob/main/AGENTS.md): repository rules for coding agents working in this template — component-first workflow, ownership map, the two rules that must never be relaxed (the manifest filename, never naming a client)
+- [docs/recipes/README.md](https://github.com/ARTFROST1/FreimSite/blob/main/docs/recipes/README.md): twenty-three field-tested recipes (lead pipelines, product feeds, scroll-driven animation, and more) — Russian, code-first
+- [Freim Deploy](https://github.com/ARTFROST1/FreimDeploy): the deploy platform this template is built for
+
+## Notes
+
+- Stack: Astro 7, React 19 (islands only), Tailwind v4, TypeScript strict, Zod schemas
+  as the single source of truth for content.
+- Ten longer reference documents and the recipe library under `docs/` are written in
+  Russian — they double as the maintainer's own working notes. An AI agent reads them
+  fine regardless of the working language; the five pages under `docs/en/` are the
+  English entrance hall.
+- License: MIT. Use it, fork it, ship it in commercial client work.
+- This repository is both a public template and the maintainer's personal working
+  copy: a guard test (`scripts/__tests__/public-tree.test.ts`, run by `npm test`) fails
+  the build if a client's name, a macOS home-directory path, or a personal email
+  reaches a tracked file.

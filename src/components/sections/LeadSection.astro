@@ -1,0 +1,293 @@
+---
+/**
+ * ============================================================================
+ *  LeadSection — ГЛАВНАЯ лид-секция страницы. Один шаг: телефон + согласие.
+ * ----------------------------------------------------------------------------
+ *  Отличие от `CTASection` (тоже «призыв к действию»): CTA-полоса УВОДИТ на
+ *  страницу контактов, а эта секция ПРИНИМАЕТ заявку прямо здесь. На лендинге
+ *  нужны обе — полоса ловит тех, кто дочитал, секция ловит тех, кто пришёл по
+ *  кнопке «Оставить заявку» из шапки/острова. Форму даёт `ui/LeadForm.astro`
+ *  (движок — `lib/lead-form.ts`), здесь только оболочка и якорная логика.
+ *
+ *  ТРИ РЕШЕНИЯ, ПЕРЕНЕСЁННЫЕ С БОЕВОГО ПРОЕКТА:
+ *
+ *  1. ЗАГОЛОВОК ВНУТРИ КАРТОЧКИ, сразу над полем. Раньше надзаголовок + H2 +
+ *     подводка стояли отдельной плитой НАД карточкой, и на мобиле человек
+ *     видел три строки текста до первого поля — конверсия падала. Сейчас между
+ *     заголовком и телефоном ровно одна короткая строка.
+ *
+ *  2. РАННЯЯ ФИКСАЦИЯ КОНТАКТА (`earlyContact` у LeadForm, по умолчанию
+ *     ВКЛЮЧЕНА здесь и только здесь): телефон уходит черновиком, как только
+ *     он введён полностью и стоит галочка согласия, — не дожидаясь кнопки.
+ *     Это уместно на главной форме проекта, где потеря контакта дороже всего;
+ *     для попапов и коротких CTA — нет. См. docs/recipes/lead-pipeline.md §4.
+ *
+ *  3. ЯКОРЬ ВЕДЁТ К КАРТОЧКЕ, А НЕ К ВЕРХУ СЕКЦИИ. Нативный переход по хешу
+ *     знает только `scroll-padding-top` и ставит под шапку ВЕРХ секции —
+ *     карточка при этом наполовину уезжает под мобильный липкий остров.
+ *     Клики по ссылкам на `#<anchorId>` этой же страницы перехватываются и
+ *     доводятся `lib/scroll-to.ts` (`block: 'fit'` — карточка целиком в
+ *     свободном окне между шапкой и островом). Без JS работает обычный якорь.
+ *
+ *  ПРЕФИЛЛ (`prefillEnabled`). Карточка товара/кейса ведёт сюда ссылкой
+ *  `/?prefill=<категория>&case=<название>#lead` или, если она на этой же
+ *  странице, атрибутами `data-prefill` / `data-case` на самой ссылке. Значения
+ *  уезжают менеджеру скрытыми полями `prefill`/`case` (они уже в
+ *  `STEP2_FIELDS` движка) и показываются посетителю ОДНОЙ тихой строкой
+ *  «По мотивам: …» — не чипом, не блоком: это контекст для менеджера, а не
+ *  элемент интерфейса. Скрытые поля добавляет скрипт: `ui/LeadForm.astro`
+ *  общий для всего сайта, и тащить в него поля, нужные одной секции, нельзя.
+ *  Следствие — без JS префилл из query-строки не доедет; сама заявка доедет.
+ *
+ *  CMS. Тексты приходят из синглтона `sections.lead` (src/config/schemas.ts +
+ *  src/content/home/sections.json) и переопределяются пропсами. `cmsScope` —
+ *  НЕОБЯЗАТЕЛЬНЫЙ, как у `PageHero`: без него секция вообще не печатает
+ *  `data-cms`. Это осознанный выбор: секцию можно повесить и на страницу, чей
+ *  заголовок задан вёрсткой, а пустая/чужая аннотация увела бы портал к
+ *  несуществующему полю. На главной он передаётся явно
+ *  (`cmsScope="sections::lead"`, см. src/pages/index.astro), и поля
+ *  `lead.title`/`lead.subtitle`/`lead.note` стоят в `SINGLETON_FIELDS`
+ *  рот-гварда (scripts/__tests__/annotations.test.ts).
+ *  Исключение — `submitLabel`: он печатается КНОПКОЙ внутри общего
+ *  `ui/LeadForm.astro`, у которого своего `data-cms` нет, поэтому поле
+ *  правится формой портала, но не кликом по странице. Ставить `data-cms` в
+ *  `LeadForm` нельзя: он общий для попапов и коротких CTA, где текст кнопки
+ *  берётся не из `sections.lead`.
+ * ============================================================================
+ */
+import { getEntry } from 'astro:content';
+import LeadForm from '../ui/LeadForm.astro';
+
+const T = (await getEntry('sections', 'main'))!.data.lead;
+
+interface Props {
+  /** id секции = цель якоря. Меняйте вместе со ссылками на неё. */
+  anchorId?: string;
+  title?: string;
+  /** Одна короткая строка между заголовком и полем — не абзац. */
+  subtitle?: string;
+  submitLabel?: string;
+  /** Микрокопия под кнопкой: снимает страх «сейчас начнут звонить». */
+  note?: string;
+  /** Метка источника для аналитики и страницы «Спасибо». */
+  source?: string;
+  success?: 'redirect' | 'inline' | 'event';
+  /** Принимать `?prefill=`/`?case=` и `data-prefill`/`data-case` со ссылок. */
+  prefillEnabled?: boolean;
+  /** Подпись перед значением `case` в тихой строке. */
+  prefillLabel?: string;
+  /** 'plain' — карточка на фоне страницы; 'contrast' — на тёмной плите. */
+  variant?: 'plain' | 'contrast';
+  /** `collection::fieldPrefix` для data-cms; без него атрибуты не печатаются. */
+  cmsScope?: string;
+}
+
+const {
+  anchorId = 'lead',
+  title = T.title,
+  subtitle = T.subtitle,
+  submitLabel = T.submitLabel,
+  note = T.note,
+  source = 'lead',
+  success = 'inline',
+  prefillEnabled = false,
+  prefillLabel = 'По мотивам:',
+  variant = 'plain',
+  cmsScope,
+} = Astro.props;
+
+/** `undefined`, а не `''` — иначе Astro напечатает пустой атрибут, а пустая
+ *  аннотация роняет annotations.test (см. PageHero.astro). */
+const cms = (field: string) => (cmsScope ? `${cmsScope}.${field}` : undefined);
+
+const contrast = variant === 'contrast';
+---
+<section
+  id={anchorId}
+  data-lead-section
+  data-prefill-enabled={prefillEnabled ? '' : undefined}
+  class:list={['section scroll-mt-6', contrast && 'bg-ink text-paper']}
+>
+  <div class="container-page">
+    <div
+      data-lead-card
+      class:list={[
+        'mx-auto w-full max-w-lg rounded-2xl p-6 md:p-10',
+        contrast ? 'bg-paper text-ink shadow-2xl' : 'border border-line bg-surface',
+      ]}
+    >
+      <div data-reveal>
+        <h2 class="text-2xl font-bold md:text-3xl" data-cms={cms('title')}>{title}</h2>
+        <p class="mt-2 text-sm text-muted md:text-base" data-cms={cms('subtitle')}>{subtitle}</p>
+      </div>
+
+      <!-- Тихая строка «По мотивам: …» — показывается скриптом при префилле. -->
+      {
+        prefillEnabled && (
+          <p data-prefill-line hidden class="mt-3 text-sm font-medium text-muted">
+            <span>{prefillLabel}</span> <span data-prefill-text />
+          </p>
+        )
+      }
+
+      <div class="mt-6">
+        <LeadForm
+          source={source}
+          submitLabel={submitLabel}
+          success={success}
+          layout="stacked"
+          phoneId={`lead-phone-${anchorId}`}
+          earlyContact
+        />
+      </div>
+
+      <p class="mt-3 text-center text-xs text-muted" data-cms={cms('note')}>{note}</p>
+    </div>
+  </div>
+</section>
+
+<script>
+  import { registerAnchorTarget } from '../../lib/anchor-nav';
+
+  /**
+   * Скрипт обслуживает ЛЮБОЕ число LeadSection на странице и не кэширует
+   * узлы: слушатель висит на `document` и на каждый вызов читает актуальный
+   * DOM — иначе после SPA-свапа он правил бы отсоединённые узлы прошлой
+   * страницы (docs/recipes/scroll-pitfalls.md §6).
+   */
+  function sections(): HTMLElement[] {
+    return Array.from(document.querySelectorAll<HTMLElement>('[data-lead-section]'));
+  }
+
+  function sectionById(id: string): HTMLElement | null {
+    if (!id) return null;
+    const el = document.getElementById(id);
+    return el && el.hasAttribute('data-lead-section') ? el : null;
+  }
+
+  /** Скрытое поле нужного имени: движок читает его из формы в момент сабмита,
+   *  поэтому добавить поле позже разметки — нормально. */
+  function hiddenField(form: HTMLFormElement, name: string): HTMLInputElement {
+    let input = form.querySelector<HTMLInputElement>(`input[name="${name}"]`);
+    if (!input) {
+      input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      form.appendChild(input);
+    }
+    return input;
+  }
+
+  /** Значения приходят из адресной строки, то есть от кого угодно. Длину
+   *  режем по тому же лимиту, что стоит у однострочных полей контент-схемы
+   *  (MAX.line = 200): и в письме менеджеру, и в тихой строке на карточке
+   *  километровая «строка» — мусор, а не контекст. */
+  function clamp(value: string | null | undefined): string {
+    return value ? value.slice(0, 200) : '';
+  }
+
+  function applyPrefill(
+    section: HTMLElement,
+    rawType: string | null | undefined,
+    rawCase: string | null | undefined,
+  ): void {
+    if (!section.hasAttribute('data-prefill-enabled')) return;
+    const form = section.querySelector<HTMLFormElement>('form[data-lead-form]');
+    if (!form) return;
+
+    const type = clamp(rawType);
+    const caseLabel = clamp(rawCase);
+    if (type) hiddenField(form, 'prefill').value = type;
+    if (!caseLabel) return;
+
+    hiddenField(form, 'case').value = caseLabel;
+    const line = section.querySelector<HTMLElement>('[data-prefill-line]');
+    const text = section.querySelector<HTMLElement>('[data-prefill-text]');
+    // textContent, а не innerHTML: значение приходит из URL — это чужой ввод.
+    if (text) text.textContent = caseLabel;
+    if (line) line.hidden = false;
+  }
+
+  /**
+   * Префилл по клику на ссылку с якорем этой секции.
+   *
+   * Прокрутку забрал `anchor-nav.ts` — здесь остаётся только то, что умеет
+   * знать одна лишь форма: контекст со ссылки. Слушатель нарочно «лёгкий»:
+   * без `preventDefault`, без `pushState`, без единого обращения к прокрутке.
+   * Он не конфликтует с перехватом в `anchor-nav`: `preventDefault` отменяет
+   * действие браузера, а не доставку события остальным слушателям.
+   *
+   * `defaultPrevented` уважается — трекер целей `data-goal` висит на capture
+   * без такой проверки, так что `cta_click` считается как прежде.
+   */
+  function onAnchorPrefill(ev: MouseEvent): void {
+    if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey)
+      return;
+    const target = ev.target instanceof Element ? ev.target : null;
+    const a = target?.closest<HTMLAnchorElement>('a[href]');
+    if (!a || a.target === '_blank' || a.hasAttribute('download')) return;
+
+    let url: URL;
+    try {
+      url = new URL(a.href, window.location.href);
+    } catch {
+      return;
+    }
+    if (url.origin !== window.location.origin) return;
+    if (url.pathname !== window.location.pathname) return; // другая страница — отработает по page-load
+    const section = sectionById(url.hash.slice(1));
+    if (!section) return;
+
+    // Ссылка на этой же странице может нести контекст И атрибутами, И
+    // query-строкой (`/?prefill=…&case=…#lead` — так её пишет карточка
+    // товара, не зная, окажется ли форма на той же странице). Атрибуты
+    // приоритетнее: они точнее и не переживают копипаст адреса.
+    applyPrefill(
+      section,
+      a.dataset.prefill ?? url.searchParams.get('prefill'),
+      a.dataset.case ?? url.searchParams.get('case'),
+    );
+  }
+
+  // Слушатель на `document` переживает SPA-свапы — вешаем один раз за вкладку.
+  document.addEventListener('click', onAnchorPrefill, true);
+
+  function init(): void {
+    const all = sections();
+    if (!all.length) return;
+
+    // Префилл из query-строки: ссылка пришла с ДРУГОЙ страницы (карточка
+    // товара), её клик перехватить было нечем. Адрес сразу чистим — иначе
+    // посетитель расшарит ссылку с чужим контекстом, а аналитика получит
+    // лишние варианты одного URL.
+    const params = new URLSearchParams(window.location.search);
+    const qPrefill = params.get('prefill');
+    const qCase = params.get('case');
+    const hashed = sectionById(window.location.hash.slice(1));
+    if (qPrefill || qCase) {
+      const target = hashed ?? all[0]!;
+      applyPrefill(target, qPrefill, qCase);
+      window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+    }
+
+    // Доводить карточку самим больше не нужно: `anchor-nav.ts` ведёт ЛЮБОЙ
+    // якорь — и по прямой ссылке, и по клику, и на SPA-переходе. Наша здесь
+    // только ЦЕЛЬ: скроллить надо к карточке и режимом `fit`, иначе на
+    // мобильном поля формы уедут под липкий CTA.
+    //
+    // Регистрация идемпотентна и повторяется на каждом `astro:page-load`:
+    // после SPA-свапа секции на странице другие, а резолвер ищет узлы заново
+    // на каждом кадре доводки (scroll-pitfalls.md §6).
+    all.forEach((section) => {
+      if (!section.id) return;
+      registerAnchorTarget(section.id, () => {
+        const live = sectionById(section.id);
+        if (!live) return null;
+        return { el: live.querySelector<HTMLElement>('[data-lead-card]') ?? live, opts: { block: 'fit' } };
+      });
+    });
+  }
+
+  init();
+  document.addEventListener('astro:page-load', init);
+</script>

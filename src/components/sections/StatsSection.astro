@@ -1,0 +1,114 @@
+---
+/**
+ * STATS — цифры-факты («12 лет», «1200+ проектов»). Данные из коллекции
+ * `stats` (src/content/home/stats.json), заголовки — `sections.stats`.
+ *
+ * ВАРИАНТЫ (`variant`) — только оформление, данные и `data-cms` одинаковые:
+ *   - `band`  (default) — контрастная полоса на токене `--color-ink`,
+ *               цифры — `--color-paper`, акцент — `--color-accent`;
+ *   - `cards` — светлая секция (`bg-surface`), каждая цифра в `.card`.
+ *
+ * СЧЁТЧИК. Целое `value` («1200») анимируется `<CountUp>` (0 → N при входе в
+ * кадр, reduced-motion — сразу итог; JS — только скрипт CountUp, он
+ * дедуплицируется Astro). Всё остальное («24/7», «от 3») печатается как есть.
+ * `suffix` рендерится ОТДЕЛЬНЫМ `<span>`, а не через проп CountUp: тогда
+ * textContent счётчика === `value` ровно, и на него можно повесить
+ * `data-cms="stats:<id>:value"` (одно поле — один элемент, CMS-BUILDING §5).
+ * Живая правка `value` в портале и анимация CountUp работают по одному узлу:
+ * анимация проигрывается один раз при появлении в кадре, дальше узел
+ * принадлежит редактору — итоговое значение после публикации берётся из
+ * пересобранного HTML, как и у любого другого поля.
+ */
+import { getCollection, getEntry } from 'astro:content';
+import CountUp from '../ui/CountUp.astro';
+
+const STATS = (await getCollection('stats')).map((e) => e.data);
+const T = (await getEntry('sections', 'main'))!.data.stats;
+
+interface Props {
+  eyebrow?: string;
+  title?: string;
+  /** `band` — контрастная полоса; `cards` — карточки на светлом фоне. */
+  variant?: 'band' | 'cards';
+  /** См. `cmsScope` у IntroSection — тот же механизм переопределения. */
+  cmsScope?: string;
+  /** `id` секции для якоря. */
+  id?: string;
+}
+const {
+  eyebrow = T.eyebrow,
+  title = T.title,
+  variant = 'band',
+  cmsScope = 'sections::stats',
+  id = 'stats',
+} = Astro.props;
+
+const isCountable = (v: string) => /^\d{1,12}$/.test(v.trim());
+---
+<section id={id} class:list={['section', variant === 'band' ? 'stats-band' : 'bg-surface']}>
+  <div class="container-page">
+    <div class="mx-auto max-w-2xl text-center">
+      <p class="eyebrow mb-3" data-cms={`${cmsScope}.eyebrow`}>{eyebrow}</p>
+      <h2 class="text-3xl font-bold md:text-4xl" data-cms={`${cmsScope}.title`}>{title}</h2>
+    </div>
+
+    <dl class="mt-12 grid grid-cols-2 gap-6 lg:grid-cols-4">
+      {
+        STATS.map((s) => (
+          <div class:list={['stat', variant === 'cards' ? 'card p-6' : 'stat-band-item']}>
+            <dd class="stat-value">
+              {isCountable(s.value) ? (
+                <CountUp to={Number(s.value.trim())} data-cms={`stats:${s.id}:value`} />
+              ) : (
+                <span data-cms={`stats:${s.id}:value`}>{s.value}</span>
+              )}
+              {s.suffix && <span class="stat-suffix" data-cms={`stats:${s.id}:suffix`}>{s.suffix}</span>}
+            </dd>
+            <dt class="stat-label" data-cms={`stats:${s.id}:label`}>{s.label}</dt>
+          </div>
+        ))
+      }
+    </dl>
+  </div>
+</section>
+
+<style>
+  .stat {
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+  }
+  /* dd перед dt — число сверху, подпись снизу; порядок в DOM тот же, что
+     визуальный, поэтому screen reader читает «1200+ — выполненных проектов». */
+  .stat-value {
+    margin: 0;
+    font-family: var(--font-heading);
+    font-size: clamp(2rem, 4.5vw, 3rem);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+  }
+  .stat-suffix {
+    color: var(--color-accent);
+  }
+  .stat-label {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--color-muted);
+  }
+
+  /* ---- variant="band": контрастная полоса ---- */
+  .stats-band {
+    background: var(--color-ink);
+    color: var(--color-paper);
+  }
+  .stats-band .stat-label {
+    color: color-mix(in srgb, var(--color-paper) 70%, transparent);
+  }
+  .stat-band-item {
+    padding: 1.5rem 1rem;
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--color-paper) 6%, transparent);
+  }
+</style>

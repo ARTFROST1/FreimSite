@@ -1,0 +1,86 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Breadcrumbs from '../components/seo/Breadcrumbs.astro';
+import ContactForm from '../components/ui/ContactForm';
+import MapSection from '../components/sections/MapSection.astro';
+import { SEO } from '../config/seo';
+import { SITE, activeSocialLinks } from '../config/site';
+import { phoneHref } from '../lib/utils';
+import { getEntry } from 'astro:content';
+
+const seo = SEO.contacts;
+const crumbs = [{ name: 'Главная', url: '/' }, { name: 'Контакты' }];
+const socials = activeSocialLinks();
+
+const PAGE = (await getEntry('pages', 'main'))!.data.contacts;
+const NAV = (await getEntry('navigation', 'main'))!.data;
+const ADDRESS = (await getEntry('address', 'main'))!.data;
+---
+<BaseLayout title={seo.title} description={seo.description} ogImage={seo.ogImage}>
+  <main>
+    <section class="section pb-0">
+      <div class="container-page">
+        <Breadcrumbs items={crumbs} class="mb-6" />
+        <h1 class="text-4xl font-bold md:text-5xl" data-cms="pages::contacts.heading.title">{PAGE.heading.title}</h1>
+        <p class="mt-4 max-w-2xl text-muted" data-cms="pages::contacts.heading.subtitle">{PAGE.heading.subtitle}</p>
+
+        <div class="mt-10 grid gap-10 lg:grid-cols-2">
+          <!-- Contact details -->
+          <div class="space-y-5">
+            <div>
+              <p class="text-sm text-muted">Телефон</p>
+              <p class="mt-1 text-lg font-medium">
+                <a
+                  href={`tel:${phoneHref(SITE.contact.phoneRaw)}`}
+                  class="hover:text-accent"
+                  data-goal="phone_click"
+                  data-goal-source="contacts"
+                  data-cms="navigation::phone"
+                  data-fd-attr="href"
+                  data-fd-attr-template="tel:{value}"
+                >
+                  <span data-cms="navigation::phone">{NAV.phone}</span>
+                </a>
+              </p>
+            </div>
+            <div>
+              <p class="text-sm text-muted">Email</p>
+              <p class="mt-1 text-lg font-medium">
+                <a href={`mailto:${SITE.contact.email}`} class="hover:text-accent">{SITE.contact.email}</a>
+              </p>
+            </div>
+            <div>
+              <p class="text-sm text-muted">Адрес</p>
+              <p class="mt-1 text-lg font-medium" data-cms="address::full">{ADDRESS.full}</p>
+            </div>
+            {
+              socials.length > 0 && (
+                <div class="flex flex-wrap gap-3 pt-2">
+                  {socials.map(([key, url]) => (
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener"
+                      class="btn btn-outline px-4 py-2 text-sm capitalize"
+                      data-goal="messenger_click"
+                      data-goal-source="contacts"
+                    >
+                      {key}
+                    </a>
+                  ))}
+                </div>
+              )
+            }
+          </div>
+
+          <!-- Lead form (React island, hydrates when visible) -->
+          <div class="card p-6 md:p-8">
+            <ContactForm client:visible />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <MapSection />
+  </main>
+</BaseLayout>

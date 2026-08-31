@@ -1,0 +1,5 @@
+# MAX-бот приёма лидов. Python 3.11+.
+httpx>=0.27          # сырой клиент MAX Bot API (/messages, /answers, /uploads, /updates)
+aiohttp>=3.9         # локальный HTTP-приёмник /notify + /health
+certifi>=2024.2.2    # базовый CA-bundle (mc.yandex.ru); Минцифры добирается из env
+python-dotenv>=1.0   # .env рядом с bot.py (в systemd можно и без него)

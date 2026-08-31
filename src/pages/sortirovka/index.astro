@@ -1,0 +1,745 @@
+---
+/**
+ * /sortirovka/ — разбор фотоархива заказчиком.
+ *
+ * ЭТО НЕ СТРАНИЦА САЙТА. Временный внутренний инструмент, который просто едет
+ * вместе с сайтом, чтобы заказчику можно было дать ссылку. Поэтому:
+ *   • без BaseLayout, без шапки/футера, без дизайн-системы — своя минимальная
+ *     разметка, чтобы правки сайта не ломали инструмент и наоборот;
+ *   • noindex, nofollow в метатегах + исключение из sitemap (astro.config.mjs);
+ *   • логика — обычный <script is:inline>, без React: всё состояние живёт в
+ *     localStorage браузера заказчика, сервер о разметке ничего не знает.
+ *
+ * ДВА ЭКРАНА
+ * ----------
+ * 1. «Разбор» — чей это кадр. 360 снимков архива не привязаны ни к чему:
+ *    их снимали россыпью, и только человек знает, какой это диван.
+ * 2. «Слои» — где кадр показывать: обложка / слайдер / галерея. Автоматика
+ *    расставляет стартовую раскладку по типу съёмки, человек её правит.
+ *
+ * ПОЧЕМУ ОТКРЫВАЕТСЯ НА ГОТОВОЙ РАСКЛАДКЕ. Из 1062 кадров 702 УЖЕ знают свой
+ * товар: 175 — из папок, которые заказчик сам назвал по моделям, 509 — из
+ * структуры старого сайта, 18 — совпали по перцептивному хешу. Просить
+ * заново группировать то, что разложено верно, — лишние часы и риск сломать
+ * правильное. Работа сводится к «поправь, где неверно».
+ *
+ * ДАННЫЕ. Готовит `scripts/build-sorter-data.mjs` в public/sorter/:
+ *   frames.json   1062 кадра: id, размеры, товар, тип съёмки, слой, источник
+ *   catalog.json  категории и товары каталога
+ *   thumb/, view/ превью 400 и 800 px, имя файла = md5 исходника
+ *
+ * РЕЗУЛЬТАТ — `assignments.json`: только ИЗМЕНЁННОЕ относительно стартовой
+ * раскладки. Не «весь список заново», а «вот что человек решил иначе» —
+ * так автоматика продолжает работать на нетронутых кадрах, а решения
+ * человека её перебивают (см. `scripts/lib/media-layers.mjs`).
+ * Файл разбирает `scripts/apply-media.mjs`.
+ */
+---
+
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="googlebot" content="noindex, nofollow" />
+<title>Разбор фотоархива</title>
+<link rel="icon" href="data:," />
+<!--
+  is:inline ОБЯЗАТЕЛЕН. По умолчанию Astro скоупит стили: `.tile` превращается
+  в `.tile:where(.astro-XXXX)`, а класс `astro-XXXX` он проставляет только тем
+  элементам, которые видит в шаблоне. Плитки, карточки товаров и строки
+  фильтров здесь рисует JS в рантайме — им класс никто не проставит, и без
+  is:inline вся сетка приезжает вообще без оформления.
+-->
+<style is:inline>
+  :root {
+    --bg: #14151a;
+    --panel: #1d1f26;
+    --tile: #262932;
+    --line: #333743;
+    --text: #edeff4;
+    --muted: #9aa1b2;
+    --accent: #e2a45f;
+    --ink: #241906;
+    --warn: #e2795f;
+    --ok: #6fbf73;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; flex-direction: column;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, select, input { font: inherit; color: inherit; }
+  button {
+    cursor: pointer; border: 1px solid var(--line); background: #2b2f3a;
+    color: var(--text); border-radius: 9px; padding: 9px 14px;
+  }
+  button:hover:not(:disabled) { background: #363b48; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .primary { background: var(--accent); border-color: var(--accent); color: var(--ink); font-weight: 650; }
+  .primary:hover:not(:disabled) { background: #efb474; }
+  .link {
+    background: none; border: 0; padding: 4px 2px; color: var(--muted);
+    text-decoration: underline; text-underline-offset: 3px;
+  }
+  .link:hover { background: none; color: var(--text); }
+  select, input[type="text"] {
+    background: #2b2f3a; border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px;
+  }
+  input[type="text"]::placeholder { color: #757c90; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .danger { border-color: var(--warn); color: var(--warn); }
+  .danger:hover:not(:disabled) { background: var(--warn); color: #200f08; }
+  .grow { flex: 1; }
+
+  /* ------------------------------------------------------------------ шапка */
+  header {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 10px 18px; background: var(--panel); border-bottom: 1px solid var(--line);
+  }
+  .tabs { display: flex; gap: 6px; }
+  .tab {
+    border-radius: 9px 9px 0 0; border-bottom-color: transparent;
+    background: #22262f; color: var(--muted); font-weight: 600;
+  }
+  .tab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--ink); }
+  .counts { font-size: 14px; color: var(--muted); }
+  .counts b { color: var(--text); font-size: 17px; }
+
+  /* -------------------------------------------------------------- инструкция */
+  .howto {
+    padding: 10px 18px; background: #191b21; border-bottom: 1px solid var(--line);
+    font-size: 14px; line-height: 1.5; color: var(--muted);
+  }
+  .howto b { color: var(--text); }
+  .howto summary { cursor: pointer; margin-top: 5px; color: var(--accent); width: fit-content; }
+  .howto ul { margin: 8px 0 2px; padding-left: 20px; }
+  .howto li { margin-bottom: 4px; }
+
+  /* ------------------------------------------------------------ панель фильтров */
+  .bar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 10px 18px; background: #191b21; border-bottom: 1px solid var(--line);
+    font-size: 14px; color: var(--muted);
+  }
+  .bar label { display: flex; align-items: center; gap: 6px; }
+  .bar input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+
+  /* ------------------------------------------------------------------ сетка */
+  .wrap { flex: 1; overflow-y: auto; padding: 16px 18px 140px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .tile {
+    position: relative; border: 2px solid transparent; border-radius: 11px;
+    overflow: hidden; background: var(--tile); cursor: pointer; padding: 0;
+    aspect-ratio: 1; display: block;
+  }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tile[aria-pressed="true"] { border-color: var(--accent); }
+  .tile[aria-pressed="true"]::after {
+    content: "✓"; position: absolute; top: 6px; right: 6px;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--accent); color: var(--ink);
+    font-size: 15px; font-weight: 800; line-height: 24px; text-align: center;
+  }
+  /* Бейдж товара: без него на экране «Разбор» не видно, что кадр уже
+     привязан, и человек привязывает его второй раз. */
+  .badge {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 5px 7px; font-size: 11.5px; line-height: 1.25;
+    background: linear-gradient(to top, rgba(0,0,0,.88), rgba(0,0,0,0));
+    color: #fff; text-align: left;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .badge.none { color: var(--accent); }
+  .shot {
+    position: absolute; top: 6px; left: 6px; padding: 2px 7px;
+    font-size: 11px; border-radius: 6px;
+    background: rgba(0,0,0,.72); color: var(--muted);
+  }
+  .empty { padding: 40px 0; text-align: center; color: var(--muted); }
+
+  /* -------------------------------------------------------------- экран слоёв */
+  .layers { display: grid; grid-template-columns: 280px 1fr; gap: 18px; align-items: start; }
+  .plist { position: sticky; top: 0; max-height: calc(100vh - 220px); overflow-y: auto; }
+  .prow {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 8px 10px; border: 1px solid transparent; border-radius: 9px;
+    background: none; text-align: left; color: var(--text); font-size: 14px;
+  }
+  .prow:hover { background: #22262f; }
+  .prow[aria-current="true"] { background: #2b2f3a; border-color: var(--accent); }
+  .prow img, .prow .noimg {
+    width: 38px; height: 38px; border-radius: 7px; object-fit: cover;
+    flex: none; background: var(--tile);
+  }
+  .prow .noimg { border: 1px dashed var(--line); background: none; }
+  .prow .n { margin-left: auto; color: var(--muted); font-size: 13px; flex: none; }
+  .prow .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .lane { margin-bottom: 22px; }
+  .lane h3 {
+    margin: 0 0 4px; font-size: 15px; display: flex; align-items: baseline; gap: 9px;
+  }
+  .lane h3 span { font-weight: 400; font-size: 13px; color: var(--muted); }
+  .lane .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .lane.cover .grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+
+  /* ------------------------------------------------------------------ низ */
+  .foot {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 12px 18px; background: var(--panel); border-top: 1px solid var(--line);
+  }
+  .foot .sel { color: var(--muted); font-size: 14px; }
+  .foot .sel b { color: var(--text); }
+
+  /* --------------------------------------------------------------- выбор товара */
+  dialog {
+    border: 1px solid var(--line); border-radius: 14px; background: var(--panel);
+    color: var(--text); padding: 0; width: min(560px, 92vw);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  .dlg-head { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; }
+  .dlg-head input { flex: 1; }
+  .dlg-list { max-height: 52vh; overflow-y: auto; padding: 8px; }
+  .dlg-foot { padding: 12px 16px; border-top: 1px solid var(--line); display: flex; gap: 8px; }
+
+  .fatal { margin: 60px auto; max-width: 620px; padding: 0 20px; }
+  .fatal h1 { font-size: 20px; }
+
+  @media (max-width: 860px) {
+    .layers { grid-template-columns: 1fr; }
+    .plist { position: static; max-height: 280px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="tabs">
+    <button class="tab" id="tabSort" aria-selected="true">1. Разбор</button>
+    <button class="tab" id="tabLayers" aria-selected="false">2. Слои</button>
+  </div>
+  <div class="counts" id="counts"></div>
+  <div class="grow"></div>
+  <button id="btnExport" class="primary">Сохранить файл разметки</button>
+  <button id="btnImport">Загрузить файл</button>
+  <input id="fileImport" type="file" accept="application/json,.json" hidden />
+</header>
+
+<div class="howto" id="howto"></div>
+
+<div class="bar" id="bar"></div>
+
+<div class="wrap" id="wrap"></div>
+
+<div class="foot" id="foot"></div>
+
+<dialog id="pick">
+  <div class="dlg-head">
+    <input type="text" id="pickSearch" placeholder="Начните вводить название изделия…" />
+  </div>
+  <div class="dlg-list" id="pickList"></div>
+  <div class="dlg-foot">
+    <button id="pickDetach" class="danger">Открепить от товара</button>
+    <div class="grow"></div>
+    <button id="pickClose">Отмена</button>
+  </div>
+</dialog>
+
+<script is:inline>
+(function () {
+  'use strict';
+
+  var DATA = '/sorter/';
+  var STORE = 'lm-sorter-v2';
+
+  var frames = [];        // все кадры из frames.json
+  var byId = {};
+  var products = [];
+  var categories = [];
+  var edits = {};         // id → {product?, layer?} — ТОЛЬКО отличия от старта
+  var selected = {};      // id → true
+  var view = 'sort';      // 'sort' | 'layers'
+  var cat = 'all';
+  var showAttached = false;
+  var activeProduct = null;
+  /** Прокрутка левого списка изделий: переживает перерисовку экрана «Слои». */
+  var plistScroll = 0;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /** Текущее значение поля кадра: правка человека, иначе стартовое. */
+  function cur(id, field) {
+    var e = edits[id];
+    if (e && e[field] !== undefined) return e[field];
+    return byId[id][field];
+  }
+
+  function setField(id, field, value) {
+    var start = byId[id][field];
+    var e = edits[id] || (edits[id] = {});
+    if (value === start) delete e[field];
+    else e[field] = value;
+    if (!Object.keys(e).length) delete edits[id];
+  }
+
+  var SHOT_LABEL = {
+    studio: 'предметка', interior: 'у заказчика', workshop: 'цех',
+    event: 'событие', render: 'визуализация', screenshot: 'скриншот',
+  };
+
+  function productTitle(key) {
+    for (var i = 0; i < products.length; i++) if (products[i].key === key) return products[i].title;
+    return key;
+  }
+
+  // ---------------------------------------------------------------- хранение
+
+  function save() {
+    try { localStorage.setItem(STORE, JSON.stringify({ v: 2, edits: edits })); } catch (err) { /* приватный режим */ }
+  }
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORE);
+      if (!raw) return;
+      var parsed = JSON.parse(raw);
+      if (parsed && parsed.edits) edits = parsed.edits;
+    } catch (err) { /* испорченное хранилище игнорируем */ }
+  }
+
+  // ------------------------------------------------------------------ отбор
+
+  function framesForSort() {
+    var out = [];
+    for (var i = 0; i < frames.length; i++) {
+      var f = frames[i];
+      var p = cur(f.id, 'product');
+      if (!showAttached && p) continue;
+      if (cat !== 'all') {
+        // У непривязанного кадра категория берётся из авторазметки, у
+        // привязанного — из товара: иначе фильтр прятал бы кадры, чью
+        // категорию машина угадала неверно.
+        var c = p ? p.split('/')[0] : (f.cat || '');
+        if (c !== cat) continue;
+      }
+      out.push(f);
+    }
+    return out;
+  }
+
+  function framesOfProduct(key) {
+    var out = [];
+    for (var i = 0; i < frames.length; i++) {
+      if (cur(frames[i].id, 'product') === key) out.push(frames[i]);
+    }
+    return out;
+  }
+
+  function countUnattached() {
+    var n = 0;
+    for (var i = 0; i < frames.length; i++) if (!cur(frames[i].id, 'product')) n++;
+    return n;
+  }
+
+  // ------------------------------------------------------------------ рендер
+
+  function tile(f, opts) {
+    var p = cur(f.id, 'product');
+    var badge = opts && opts.hideBadge ? '' :
+      '<span class="badge' + (p ? '' : ' none') + '">' +
+        (p ? esc(productTitle(p)) : 'не разобрано') + '</span>';
+    var shot = f.shot ? '<span class="shot">' + esc(SHOT_LABEL[f.shot] || f.shot) + '</span>' : '';
+    return '<button class="tile" data-id="' + esc(f.id) + '" aria-pressed="' +
+      (selected[f.id] ? 'true' : 'false') + '" title="' + esc(f.note || '') + '">' +
+      '<img loading="lazy" decoding="async" src="' + DATA + 'thumb/' + esc(f.img) + '" alt="" />' +
+      shot + badge + '</button>';
+  }
+
+  function renderSort() {
+    var list = framesForSort();
+    var opts = '<option value="all">Все разделы</option>';
+    for (var i = 0; i < categories.length; i++) {
+      opts += '<option value="' + esc(categories[i].id) + '"' +
+        (cat === categories[i].id ? ' selected' : '') + '>' + esc(categories[i].name) + '</option>';
+    }
+    document.getElementById('bar').innerHTML =
+      '<label>Раздел <select id="catSel">' + opts + '</select></label>' +
+      '<label><input type="checkbox" id="chkAttached"' + (showAttached ? ' checked' : '') +
+      ' /> показывать уже разобранные</label>' +
+      '<span class="grow"></span>' +
+      '<span>' + list.length + ' кадров на экране</span>';
+
+    document.getElementById('wrap').innerHTML = list.length
+      ? '<div class="grid">' + list.map(function (f) { return tile(f); }).join('') + '</div>'
+      : '<div class="empty">Здесь пусто. Переключите раздел или включите «показывать уже разобранные».</div>';
+
+    document.getElementById('catSel').onchange = function (e) { cat = e.target.value; render(); };
+    document.getElementById('chkAttached').onchange = function (e) { showAttached = e.target.checked; render(); };
+  }
+
+  /** Строка изделия в левом списке: обложка, название, число кадров. */
+  function plistHtml() {
+    var rows = '';
+    for (var j = 0; j < products.length; j++) {
+      var p = products[j];
+      var mine = framesOfProduct(p.key);
+      var cover = null;
+      for (var k = 0; k < mine.length; k++) {
+        if (cur(mine[k].id, 'layer') === 'cover') { cover = mine[k]; break; }
+      }
+      if (!cover) for (var m = 0; m < mine.length; m++) {
+        if (cur(mine[m].id, 'layer') === 'slider') { cover = mine[m]; break; }
+      }
+      if (!cover) cover = mine[0];
+      rows += '<button class="prow" data-key="' + esc(p.key) + '" aria-current="' +
+        (activeProduct === p.key ? 'true' : 'false') + '">' +
+        // У товара может не быть ни одного кадра (25 таких в каталоге) —
+        // рисуем пустую рамку, а не <img> без src: тот приезжает иконкой
+        // «битая картинка» и читается как ошибка загрузки.
+        (cover ? '<img loading="lazy" src="' + DATA + 'thumb/' + esc(cover.img) + '" alt="" />'
+               : '<span class="noimg" aria-hidden="true"></span>') +
+        '<span class="t">' + esc(p.title) + '</span>' +
+        '<span class="n">' + mine.length + '</span></button>';
+    }
+    return rows;
+  }
+
+  /** Три полосы кадров выбранного изделия. */
+  function lanesHtml() {
+    var mineNow = framesOfProduct(activeProduct);
+    var lanes = [
+      ['cover', 'Обложка', 'одна, показывается в каталоге и в поиске'],
+      ['slider', 'Слайдер', 'верх карточки, листается миниатюрами'],
+      ['gallery', 'Галерея', 'нижняя секция, раскрывается по клику'],
+    ];
+    var html = '';
+    for (var l = 0; l < lanes.length; l++) {
+      var key = lanes[l][0];
+      var inLane = mineNow.filter(function (f) { return cur(f.id, 'layer') === key; });
+      // Обложка не выбрана явно — её роль исполняет первый кадр слайдера,
+      // и показать это честнее, чем пустую полосу.
+      var implicit = '';
+      if (key === 'cover' && !inLane.length) {
+        var first = mineNow.filter(function (f) { return cur(f.id, 'layer') === 'slider'; })[0];
+        implicit = first
+          ? '<div class="empty">Не выбрана — обложкой станет первый кадр слайдера.</div>'
+          : '<div class="empty">Кадров нет.</div>';
+      }
+      html += '<div class="lane ' + key + '"><h3>' + esc(lanes[l][1]) +
+        ' <span>' + esc(lanes[l][2]) + ' · ' + inLane.length + '</span></h3>' +
+        (inLane.length
+          ? '<div class="grid">' + inLane.map(function (f) { return tile(f, { hideBadge: true }); }).join('') + '</div>'
+          : implicit || '<div class="empty">Кадров нет.</div>') +
+        '</div>';
+    }
+    return html;
+  }
+
+  /**
+   * Переключение изделия НЕ трогает левый список — только подсветку строки и
+   * правую часть. Раньше здесь была полная перерисовка, и список каждый раз
+   * прокручивался в начало: выбрал изделие в середине каталога — и ищи его
+   * заново. При 128 товарах это делало экран непригодным для работы подряд.
+   */
+  function selectProduct(key) {
+    activeProduct = key;
+    selected = {};
+    var plist = document.getElementById('plist');
+    var rows = plist ? plist.querySelectorAll('.prow') : [];
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].setAttribute('aria-current', rows[i].getAttribute('data-key') === key ? 'true' : 'false');
+    }
+    document.getElementById('lanes').innerHTML = lanesHtml();
+    document.getElementById('wrap').scrollTop = 0;
+    renderFoot();
+  }
+
+  function bindPlist() {
+    var plist = document.getElementById('plist');
+    if (plist) {
+      // Запоминаем прокрутку на лету, а не перед перерисовкой: список
+      // пересобирается из нескольких мест, и одно из них рано или поздно
+      // забыли бы сохранить позицию.
+      plist.onscroll = function () { plistScroll = plist.scrollTop; };
+    }
+    // Строго внутри #plist: класс `.prow` носят и строки диалога выбора
+    // товара, и поиск по всему документу перевесил бы их обработчики на
+    // выбор изделия — диалог перестал бы привязывать кадры.
+    var rows = plist ? plist.querySelectorAll('.prow') : [];
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].onclick = function () { selectProduct(this.getAttribute('data-key')); };
+    }
+  }
+
+  /**
+   * Перекладка кадров меняет счётчики и обложки в левом списке, поэтому его
+   * приходится пересобрать — но прокрутку сохраняем, иначе работа сбивается
+   * после каждого нажатия так же, как при переключении изделия.
+   */
+  function refreshLayers() {
+    var plist = document.getElementById('plist');
+    var top = plist ? plist.scrollTop : 0;
+    if (plist) {
+      plist.innerHTML = plistHtml();
+      bindPlist();
+      plist.scrollTop = top;
+    }
+    document.getElementById('lanes').innerHTML = lanesHtml();
+    renderFoot();
+    renderCounts();
+  }
+
+  function renderLayers() {
+    if (!activeProduct) {
+      for (var i = 0; i < products.length; i++) {
+        if (!products[i].draft) { activeProduct = products[i].key; break; }
+      }
+    }
+    document.getElementById('bar').innerHTML =
+      '<span>Выберите изделие слева, затем отметьте кадры и переложите их кнопками внизу.</span>';
+
+    document.getElementById('wrap').innerHTML =
+      '<div class="layers"><div class="plist" id="plist">' + plistHtml() + '</div>' +
+      '<div id="lanes">' + lanesHtml() + '</div></div>';
+
+    bindPlist();
+    // Возврат на экран «Слои» не должен терять место в списке — например,
+    // после того как человек сходил на «Разбор» привязать пропущенный кадр.
+    var plist = document.getElementById('plist');
+    if (plist) plist.scrollTop = plistScroll;
+  }
+
+  function renderFoot() {
+    var n = Object.keys(selected).length;
+    var html = '<span class="sel">Отмечено: <b>' + n + '</b></span>';
+    if (view === 'sort') {
+      html += '<button id="actAttach" class="primary"' + (n ? '' : ' disabled') + '>Это одно изделие →</button>';
+    } else {
+      html += '<button id="toCover"' + (n === 1 ? '' : ' disabled') + '>→ в обложку</button>' +
+        '<button id="toSlider"' + (n ? '' : ' disabled') + '>→ в слайдер</button>' +
+        '<button id="toGallery"' + (n ? '' : ' disabled') + '>→ в галерею</button>' +
+        '<button id="detach" class="danger"' + (n ? '' : ' disabled') + '>Убрать из товара</button>';
+    }
+    html += '<span class="grow"></span>' +
+      '<button id="clearSel" class="link"' + (n ? '' : ' disabled') + '>снять отметки</button>' +
+      '<button id="resetAll" class="danger">Сбросить всё</button>';
+    document.getElementById('foot').innerHTML = html;
+
+    document.getElementById('clearSel').onclick = function () { selected = {}; render(); };
+    document.getElementById('resetAll').onclick = function () {
+      if (!confirm('Стереть ВСЮ вашу работу и вернуться к исходной раскладке?')) return;
+      edits = {}; selected = {}; save(); render();
+    };
+    if (view === 'sort') {
+      document.getElementById('actAttach').onclick = openPicker;
+    } else {
+      document.getElementById('toCover').onclick = function () { setLayer('cover'); };
+      document.getElementById('toSlider').onclick = function () { setLayer('slider'); };
+      document.getElementById('toGallery').onclick = function () { setLayer('gallery'); };
+      document.getElementById('detach').onclick = function () {
+        eachSelected(function (id) { setField(id, 'product', null); });
+        selected = {}; save(); refreshLayers();
+      };
+    }
+  }
+
+  function eachSelected(fn) {
+    for (var id in selected) if (selected[id]) fn(id);
+  }
+
+  function setLayer(layer) {
+    // Обложка ровно одна: назначая новую, снимаем прежнюю в слайдер.
+    if (layer === 'cover') {
+      var mine = framesOfProduct(activeProduct);
+      for (var i = 0; i < mine.length; i++) {
+        if (cur(mine[i].id, 'layer') === 'cover') setField(mine[i].id, 'layer', 'slider');
+      }
+    }
+    eachSelected(function (id) { setField(id, 'layer', layer); });
+    selected = {}; save(); refreshLayers();
+  }
+
+  function renderCounts() {
+    var un = countUnattached();
+    var changed = Object.keys(edits).length;
+    document.getElementById('counts').innerHTML =
+      'Не разобрано: <b>' + un + '</b> из ' + frames.length + ' · ваших правок: <b>' + changed + '</b>';
+  }
+
+  function renderHowto() {
+    var sortText =
+      '<b>Что делать:</b> выберите раздел → отметьте кадры одного изделия → «Это одно изделие» и укажите товар. ' +
+      'Показаны только неразобранные кадры; галочка сверху покажет и остальные.';
+    var layersText =
+      '<b>Что делать:</b> выберите изделие слева → отметьте кадры → переложите их кнопками внизу ' +
+      'в обложку, слайдер или галерею.';
+    document.getElementById('howto').innerHTML =
+      (view === 'sort' ? sortText : layersText) +
+      '<details><summary>Подробнее</summary><ul>' +
+      '<li><b>Раскладка уже сделана автоматически</b> — вы её только поправляете. Кадры, где герой не изделие ' +
+      '(интерьер заказчика, доставка), отправлены в галерею, остальные в слайдер.</li>' +
+      '<li><b>Обложка</b> — одна на товар, её видно в каталоге и в поиске. Не выбрали — станет первый кадр слайдера.</li>' +
+      '<li><b>Берите все снимки изделия</b>, включая цеховые: они пойдут в галерею и работают как доказательство, ' +
+      'что мебель делают руками.</li>' +
+      '<li><b>Работа сохраняется сама</b> — на этом компьютере и в этом браузере. Можно закрыть вкладку.</li>' +
+      '<li><b>Закончили</b> — «Сохранить файл разметки» и пришлите файл нам.</li>' +
+      '<li>Красная «Сбросить всё» стирает вашу работу целиком.</li>' +
+      '</ul></details>';
+  }
+
+  function render() {
+    document.getElementById('tabSort').setAttribute('aria-selected', view === 'sort' ? 'true' : 'false');
+    document.getElementById('tabLayers').setAttribute('aria-selected', view === 'layers' ? 'true' : 'false');
+    renderHowto();
+    if (view === 'sort') renderSort(); else renderLayers();
+    renderFoot();
+    renderCounts();
+  }
+
+  // ----------------------------------------------------------- выбор товара
+
+  function openPicker() {
+    var dlg = document.getElementById('pick');
+    var search = document.getElementById('pickSearch');
+    search.value = '';
+    fillPicker('');
+    document.getElementById('pickDetach').style.display = view === 'sort' ? 'none' : '';
+    dlg.showModal();
+    search.focus();
+  }
+
+  function fillPicker(q) {
+    var needle = q.trim().toLowerCase();
+    var html = '';
+    for (var i = 0; i < products.length; i++) {
+      var p = products[i];
+      if (needle && p.title.toLowerCase().indexOf(needle) === -1 && p.slug.indexOf(needle) === -1) continue;
+      html += '<button class="prow" data-key="' + esc(p.key) + '">' +
+        '<span class="t">' + esc(p.title) + '</span>' +
+        '<span class="n">' + esc(p.category) + '</span></button>';
+    }
+    var list = document.getElementById('pickList');
+    list.innerHTML = html || '<div class="empty">Ничего не нашлось.</div>';
+    var rows = list.querySelectorAll('.prow');
+    for (var j = 0; j < rows.length; j++) {
+      rows[j].onclick = function () {
+        var key = this.getAttribute('data-key');
+        eachSelected(function (id) { setField(id, 'product', key); });
+        selected = {};
+        save();
+        document.getElementById('pick').close();
+        render();
+      };
+    }
+  }
+
+  // ------------------------------------------------------------ файл разметки
+
+  function exportFile() {
+    var out = { version: 2, savedAt: new Date().toISOString(), frames: {} };
+    for (var id in edits) {
+      var e = edits[id];
+      out.frames[id] = {
+        product: e.product !== undefined ? e.product : cur(id, 'product'),
+        layer: e.layer !== undefined ? e.layer : cur(id, 'layer'),
+      };
+    }
+    var blob = new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'assignments.json';
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+  }
+
+  function importFile(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var parsed = JSON.parse(String(reader.result));
+        var incoming = parsed.frames || {};
+        var applied = 0;
+        for (var id in incoming) {
+          if (!byId[id]) continue;
+          if (incoming[id].product !== undefined) setField(id, 'product', incoming[id].product);
+          if (incoming[id].layer !== undefined) setField(id, 'layer', incoming[id].layer);
+          applied++;
+        }
+        save(); render();
+        alert('Загружено правок: ' + applied + '.');
+      } catch (err) {
+        alert('Не получилось прочитать файл: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // ------------------------------------------------------------------ старт
+
+  function loadJSON(url) {
+    return fetch(url, { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error(url + ' — ' + r.status);
+      return r.json();
+    });
+  }
+
+  function fatal(text) {
+    document.body.innerHTML = '<div class="fatal"><h1>Не получилось открыть архив</h1><p>' +
+      esc(text) + '</p><p>Напишите нам — починим ссылку. Ваша работа при этом не теряется.</p></div>';
+  }
+
+  Promise.all([loadJSON(DATA + 'frames.json'), loadJSON(DATA + 'catalog.json')])
+    .then(function (res) {
+      frames = res[0].items || [];
+      for (var i = 0; i < frames.length; i++) byId[frames[i].id] = frames[i];
+      products = (res[1].products || []).filter(function (p) { return !p.draft; });
+      categories = res[1].categories || [];
+      load();
+
+      document.getElementById('tabSort').onclick = function () { view = 'sort'; selected = {}; render(); };
+      document.getElementById('tabLayers').onclick = function () { view = 'layers'; selected = {}; render(); };
+      document.getElementById('btnExport').onclick = exportFile;
+      document.getElementById('btnImport').onclick = function () { document.getElementById('fileImport').click(); };
+      document.getElementById('fileImport').onchange = function (e) {
+        if (e.target.files && e.target.files[0]) importFile(e.target.files[0]);
+        e.target.value = '';
+      };
+      document.getElementById('pickSearch').oninput = function (e) { fillPicker(e.target.value); };
+      document.getElementById('pickClose').onclick = function () { document.getElementById('pick').close(); };
+      document.getElementById('pickDetach').onclick = function () {
+        eachSelected(function (id) { setField(id, 'product', null); });
+        selected = {}; save();
+        document.getElementById('pick').close();
+        render();
+      };
+
+      // Делегирование: плитки перерисовываются целиком на каждом действии,
+      // навешивать обработчик на каждую — тысяча слушателей на пустом месте.
+      document.getElementById('wrap').addEventListener('click', function (e) {
+        var t = e.target.closest ? e.target.closest('.tile') : null;
+        if (!t) return;
+        var id = t.getAttribute('data-id');
+        if (selected[id]) delete selected[id]; else selected[id] = true;
+        t.setAttribute('aria-pressed', selected[id] ? 'true' : 'false');
+        renderFoot();
+      });
+
+      render();
+    })
+    .catch(function (err) { fatal(err.message); });
+})();
+</script>
+
+</body>
+</html>

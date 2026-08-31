@@ -1,0 +1,25 @@
+---
+/**
+ * Persists UTM params + Yandex click id (yclid) from the landing URL into
+ * sessionStorage on first visit. Read them back when submitting a form to
+ * attribute the lead to its ad source.
+ *   import { getAttribution } from '@/lib/attribution'  // if you add a helper
+ */
+---
+<script>
+  (function () {
+    try {
+      var params = new URLSearchParams(location.search);
+      var keys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'yclid', 'gclid'];
+      var found: Record<string, string> = {};
+      var has = false;
+      keys.forEach(function (k) {
+        var v = params.get(k);
+        if (v) { found[k] = v; has = true; }
+      });
+      if (has && !sessionStorage.getItem('attribution')) {
+        sessionStorage.setItem('attribution', JSON.stringify(found));
+      }
+    } catch (e) {}
+  })();
+</script>

@@ -1,0 +1,169 @@
+---
+/**
+ * SilhouetteSprite — общий SVG-спрайт нейтральных силуэтов-заглушек для
+ * `.ph-slot` (плейсхолдер под ассет, которого ещё нет: фото, иллюстрация,
+ * фотография объекта — см. `.ph`/`.ph-slot`/`.ph-slot.clay` в global.css).
+ *
+ * Подключается ОДИН раз на страницу (в макете или на верхнем уровне
+ * страницы, до секций, которые используют силуэты) — сам по себе рендерит
+ * `display:none` и ничего не рисует, только регистрирует `<symbol
+ * id="sl-...">` в DOM. Секции ссылаются на них через
+ * `<span class="ph ph-slot"><svg style={`color:${...}`}><use href="#sl-coin" /></svg></span>`.
+ * currentColor даёт каждому месту использования свой цвет — управляется
+ * инлайновым `color` на потребляющем `<svg>`, не на символах спрайта.
+ *
+ * Как расширить спрайт:
+ *   1. Добавить новый `<symbol id="sl-имя" viewBox="0 0 200 140">…</symbol>`
+ *      внутрь <svg> ниже. Держите viewBox в том же масштабе (обычно
+ *      200×140 или 200×150), чтобы силуэты одного размера смотрелись
+ *      одинаково внутри `.ph-slot`.
+ *   2. Заливка — `currentColor` для основной формы; акценты — `var(--color-accent)`;
+ *      блики/тени — `rgba(255,255,255,.2)` / `rgba(0,0,0,.25)` (не токены,
+ *      это иллюстративные полутона самого силуэта, а не цвета темы).
+ *   3. Ссылаться на новый символ из секции через тот же `<use href="#sl-имя">`.
+ *
+ * Силуэты нарочно нейтральные (документ, замер, доставка, инструмент,
+ * телефон и т.п.) — ни один не привязан к конкретной товарной категории,
+ * поэтому набор подходит любому проекту на этом стартере.
+ */
+---
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="sl-biz" viewBox="0 0 200 140">
+    <rect x="8" y="38" width="108" height="50" rx="22" fill="currentColor" />
+    <rect x="2" y="62" width="28" height="48" rx="12" fill="currentColor" />
+    <rect x="94" y="62" width="28" height="48" rx="12" fill="currentColor" />
+    <rect x="26" y="72" width="72" height="30" rx="13" fill="rgba(255,255,255,.2)" />
+    <rect x="140" y="48" width="52" height="42" rx="20" fill="currentColor" />
+    <rect x="134" y="68" width="16" height="42" rx="8" fill="currentColor" />
+    <rect x="182" y="68" width="16" height="42" rx="8" fill="currentColor" />
+    <rect x="148" y="76" width="36" height="24" rx="10" fill="var(--color-accent)" opacity=".85" />
+    <rect x="14" y="110" width="10" height="10" rx="4" fill="rgba(0,0,0,.25)" />
+    <rect x="100" y="110" width="10" height="10" rx="4" fill="rgba(0,0,0,.25)" />
+    <rect x="152" y="110" width="10" height="10" rx="4" fill="rgba(0,0,0,.25)" />
+  </symbol>
+  <symbol id="sl-sketch" viewBox="0 0 200 150">
+    <rect x="34" y="38" width="132" height="52" rx="24" fill="none" stroke="currentColor" stroke-width="5" />
+    <rect x="20" y="62" width="34" height="44" rx="14" fill="none" stroke="currentColor" stroke-width="5" />
+    <rect x="146" y="62" width="34" height="44" rx="14" fill="none" stroke="currentColor" stroke-width="5" />
+    <path d="M56 88h42m4 0h42" stroke="currentColor" stroke-width="4" stroke-linecap="round" opacity=".55" />
+    <path d="M34 128h132M34 122v12m132-12v12" stroke="var(--color-accent)" stroke-width="3" stroke-linecap="round" />
+  </symbol>
+  <symbol id="sl-coin" viewBox="0 0 200 140">
+    <rect x="36" y="66" width="128" height="52" rx="24" fill="currentColor" />
+    <rect x="24" y="82" width="30" height="40" rx="14" fill="currentColor" />
+    <rect x="146" y="82" width="30" height="40" rx="14" fill="currentColor" />
+    <rect x="84" y="60" width="32" height="9" rx="4.5" fill="rgba(0,0,0,.3)" />
+    <circle cx="100" cy="31" r="20" fill="var(--color-accent)" />
+    <circle cx="100" cy="31" r="12" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="3" />
+  </symbol>
+  <symbol id="sl-scroll" viewBox="0 0 200 140">
+    <rect x="38" y="34" width="130" height="76" rx="16" fill="var(--color-paper)" />
+    <circle cx="44" cy="72" r="20" fill="currentColor" />
+    <circle cx="44" cy="72" r="8" fill="rgba(255,255,255,.35)" />
+    <rect x="78" y="52" width="72" height="6" rx="3" fill="rgba(0,0,0,.22)" />
+    <rect x="78" y="68" width="58" height="6" rx="3" fill="rgba(0,0,0,.22)" />
+    <rect x="78" y="84" width="40" height="6" rx="3" fill="rgba(0,0,0,.22)" />
+    <circle cx="148" cy="92" r="13" fill="var(--color-accent)" />
+  </symbol>
+  <symbol id="sl-shield" viewBox="0 0 200 150">
+    <path d="M100 12 160 34v42c0 36-26 58-60 68-34-10-60-32-60-68V34Z" fill="currentColor" />
+    <rect x="62" y="62" width="76" height="30" rx="14" fill="rgba(255,255,255,.24)" />
+    <rect x="54" y="76" width="20" height="26" rx="9" fill="rgba(255,255,255,.24)" />
+    <rect x="126" y="76" width="20" height="26" rx="9" fill="rgba(255,255,255,.24)" />
+    <path
+      d="M86 46l10 10 20-20"
+      fill="none"
+      stroke="var(--color-accent)"
+      stroke-width="7"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="sl-phone" viewBox="0 0 200 150">
+    <rect x="64" y="12" width="72" height="126" rx="20" fill="currentColor" />
+    <rect x="72" y="26" width="56" height="90" rx="10" fill="rgba(255,255,255,.24)" />
+    <rect x="80" y="66" width="40" height="20" rx="9" fill="var(--color-accent)" />
+    <rect x="76" y="86" width="14" height="14" rx="6" fill="rgba(0,0,0,.2)" />
+    <rect x="93" y="86" width="14" height="14" rx="6" fill="rgba(0,0,0,.2)" />
+    <rect x="110" y="86" width="14" height="14" rx="6" fill="rgba(0,0,0,.2)" />
+    <rect x="88" y="124" width="24" height="5" rx="2.5" fill="rgba(255,255,255,.4)" />
+  </symbol>
+  <symbol id="sl-calcpad" viewBox="0 0 200 150">
+    <rect x="52" y="14" width="96" height="122" rx="18" fill="currentColor" />
+    <rect x="62" y="26" width="76" height="30" rx="9" fill="rgba(255,255,255,.28)" />
+    <rect x="62" y="66" width="22" height="18" rx="7" fill="rgba(255,255,255,.2)" />
+    <rect x="89" y="66" width="22" height="18" rx="7" fill="rgba(255,255,255,.2)" />
+    <rect x="116" y="66" width="22" height="18" rx="7" fill="rgba(255,255,255,.2)" />
+    <rect x="62" y="90" width="22" height="18" rx="7" fill="rgba(255,255,255,.2)" />
+    <rect x="89" y="90" width="22" height="18" rx="7" fill="rgba(255,255,255,.2)" />
+    <rect x="116" y="90" width="22" height="42" rx="7" fill="var(--color-accent)" />
+    <rect x="62" y="114" width="49" height="18" rx="7" fill="rgba(255,255,255,.2)" />
+  </symbol>
+  <symbol id="sl-swatch" viewBox="0 0 200 150">
+    <rect x="30" y="34" width="72" height="92" rx="18" fill="rgba(255,255,255,.25)" transform="rotate(-8 66 80)" />
+    <rect x="64" y="28" width="72" height="94" rx="18" fill="currentColor" transform="rotate(-2 100 75)" />
+    <rect x="100" y="28" width="72" height="94" rx="18" fill="var(--color-accent)" transform="rotate(7 136 75)" />
+    <circle cx="120" cy="44" r="5" fill="rgba(255,255,255,.5)" />
+  </symbol>
+  <symbol id="sl-stamp" viewBox="0 0 200 150">
+    <rect x="46" y="14" width="108" height="122" rx="14" fill="var(--color-paper)" />
+    <rect x="60" y="32" width="80" height="7" rx="3.5" fill="rgba(0,0,0,.22)" />
+    <rect x="60" y="50" width="64" height="7" rx="3.5" fill="rgba(0,0,0,.22)" />
+    <rect x="60" y="68" width="72" height="7" rx="3.5" fill="rgba(0,0,0,.22)" />
+    <circle cx="122" cy="106" r="22" fill="none" stroke="var(--color-accent)" stroke-width="6" />
+    <path
+      d="M112 106l7 7 13-13"
+      fill="none"
+      stroke="var(--color-accent)"
+      stroke-width="5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path d="M60 108c8-6 14 6 22-2" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" />
+  </symbol>
+  <symbol id="sl-frame" viewBox="0 0 200 140">
+    <rect x="26" y="88" width="148" height="18" rx="9" fill="currentColor" />
+    <rect x="26" y="30" width="16" height="76" rx="8" fill="currentColor" />
+    <rect x="158" y="30" width="16" height="76" rx="8" fill="currentColor" />
+    <rect x="38" y="30" width="124" height="14" rx="7" fill="rgba(255,255,255,.25)" />
+    <path d="M52 88 88 54m24 34 36-34" stroke="rgba(255,255,255,.3)" stroke-width="8" stroke-linecap="round" />
+    <circle cx="34" cy="97" r="4" fill="var(--color-accent)" />
+    <circle cx="166" cy="97" r="4" fill="var(--color-accent)" />
+    <rect x="34" y="106" width="12" height="16" rx="5" fill="rgba(0,0,0,.25)" />
+    <rect x="154" y="106" width="12" height="16" rx="5" fill="rgba(0,0,0,.25)" />
+  </symbol>
+  <symbol id="sl-van" viewBox="0 0 200 140">
+    <rect x="16" y="36" width="112" height="62" rx="14" fill="currentColor" />
+    <path d="M128 52h30a8 8 0 0 1 6.4 3.2L180 76v14a8 8 0 0 1-8 8h-44Z" fill="currentColor" />
+    <rect x="136" y="58" width="24" height="18" rx="6" fill="rgba(255,255,255,.3)" />
+    <rect x="16" y="80" width="112" height="10" fill="var(--color-accent)" opacity=".85" />
+    <circle cx="52" cy="104" r="15" fill="rgba(0,0,0,.4)" />
+    <circle cx="52" cy="104" r="6" fill="rgba(255,255,255,.4)" />
+    <circle cx="150" cy="104" r="15" fill="rgba(0,0,0,.4)" />
+    <circle cx="150" cy="104" r="6" fill="rgba(255,255,255,.4)" />
+  </symbol>
+  <symbol id="sl-door" viewBox="0 0 200 150">
+    <rect x="56" y="12" width="88" height="126" rx="10" fill="none" stroke="currentColor" stroke-width="12" />
+    <g transform="rotate(-14 100 92)">
+      <rect x="64" y="74" width="72" height="30" rx="14" fill="var(--color-accent)" />
+      <rect x="56" y="86" width="20" height="26" rx="9" fill="var(--color-accent)" />
+      <rect x="124" y="86" width="20" height="26" rx="9" fill="var(--color-accent)" />
+      <path d="M68 74v40m64-40v40" stroke="rgba(255,255,255,.45)" stroke-width="5" />
+    </g>
+  </symbol>
+  <symbol id="sl-drill" viewBox="0 0 200 150">
+    <rect x="44" y="44" width="92" height="38" rx="16" fill="currentColor" />
+    <rect x="70" y="78" width="30" height="48" rx="12" fill="currentColor" />
+    <rect x="136" y="54" width="34" height="16" rx="8" fill="var(--color-accent)" />
+    <rect x="52" y="52" width="24" height="20" rx="8" fill="rgba(255,255,255,.25)" />
+    <rect x="78" y="112" width="14" height="10" rx="4" fill="rgba(0,0,0,.28)" />
+    <rect x="30" y="112" width="18" height="26" rx="8" fill="rgba(0,0,0,.25)" />
+  </symbol>
+  <symbol id="sl-box" viewBox="0 0 200 150">
+    <rect x="42" y="72" width="116" height="60" rx="12" fill="currentColor" />
+    <rect x="58" y="26" width="84" height="44" rx="10" fill="rgba(255,255,255,.22)" />
+    <rect x="94" y="26" width="12" height="44" fill="var(--color-accent)" opacity=".85" />
+    <rect x="94" y="72" width="12" height="60" fill="var(--color-accent)" />
+    <rect x="52" y="84" width="28" height="7" rx="3.5" fill="rgba(0,0,0,.25)" />
+  </symbol>
+</svg>

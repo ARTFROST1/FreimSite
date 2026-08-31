@@ -1,0 +1,66 @@
+---
+/**
+ * MAP + contacts strip. The map itself is the <YandexMap /> engine: lazy
+ * JS-API load with tap-to-activate guard when PUBLIC_MAPS_API_KEY is set,
+ * automatic iframe fallback when it's not — so this works out of the box
+ * with zero keys. Address data comes from config/site.ts.
+ */
+import { SITE } from '../../config/site';
+import { getEntry } from 'astro:content';
+import { phoneHref } from '../../lib/utils';
+import YandexMap from '../ui/YandexMap.astro';
+
+const T = (await getEntry('sections', 'main'))!.data.map;
+const NAV = (await getEntry('navigation', 'main'))!.data;
+const ADDRESS = (await getEntry('address', 'main'))!.data;
+
+interface Props {
+  eyebrow?: string;
+  title?: string;
+  /** See IntroSection's `cmsScope` — same override mechanism. Scopes the
+   *  HEADING copy only; phone and address stay bound to the site-wide
+   *  `navigation`/`address` singletons on every page. */
+  cmsScope?: string;
+}
+const { eyebrow = T.eyebrow, title = T.title, cmsScope = 'sections::map' } = Astro.props;
+---
+<section id="map" class="section bg-surface">
+  <div class="container-page grid gap-8 md:grid-cols-[1fr_1.4fr] md:items-stretch">
+    <div>
+      <p class="eyebrow mb-3" data-cms={`${cmsScope}.eyebrow`}>{eyebrow}</p>
+      <h2 class="text-3xl font-bold md:text-4xl" data-cms={`${cmsScope}.title`}>{title}</h2>
+      <dl class="mt-8 space-y-4 text-sm">
+        <div>
+          <dt class="text-muted">Адрес</dt>
+          <dd class="mt-1 font-medium" data-cms="address::full">{ADDRESS.full}</dd>
+        </div>
+        <div>
+          <dt class="text-muted">Телефон</dt>
+          <dd class="mt-1 font-medium">
+            <a
+              href={`tel:${phoneHref(SITE.contact.phoneRaw)}`}
+              class="hover:text-accent"
+              data-goal="phone_click"
+              data-goal-source="map"
+              data-cms="navigation::phone"
+              data-fd-attr="href"
+              data-fd-attr-template="tel:{value}"
+            >
+              <span data-cms="navigation::phone">{NAV.phone}</span>
+            </a>
+          </dd>
+        </div>
+        <div>
+          <dt class="text-muted">Email</dt>
+          <dd class="mt-1 font-medium">
+            <a href={`mailto:${SITE.contact.email}`} class="hover:text-accent">{SITE.contact.email}</a>
+          </dd>
+        </div>
+      </dl>
+    </div>
+
+    <div class="min-h-[320px] overflow-hidden rounded-xl border border-line">
+      <YandexMap class="h-full min-h-[320px]" />
+    </div>
+  </div>
+</section>

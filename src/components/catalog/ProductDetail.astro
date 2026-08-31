@@ -1,0 +1,363 @@
+---
+/**
+ * ProductDetail — reusable body for a single product page. Port of the
+ * catalogue reference's `sections/ProductDetail.astro`: image + gallery,
+ * spec panel (price/brands),
+ * features checklist, MDX/markdown body. Adapted to astro-starter:
+ *   - images go through `ContentImage` (registry keys or `/images/…` URLs),
+ *     not `astro:assets`' `getImage()` directly — no per-image src/srcset
+ *     bookkeeping, gallery swap is a plain hidden-class toggle instead.
+ *   - phone + CTA come from the same sources as Header.astro
+ *     (`SITE.contact`, `PRIMARY_CTA`), not a bespoke lead-form anchor.
+ *   - palette is the template's tokens (ink/paper/accent/muted/line/surface),
+ *     not the catalogue reference's.
+ *
+ * `body` lets the caller pass an already-rendered MDX component
+ * (`const { Content } = await render(product)` — Task 4); the default slot
+ * is the fallback for callers that render children directly instead.
+ *
+ * eyebrow + `<h1>`: the product title previously had NO visible heading
+ * anywhere on the page (only `<title>`/JSON-LD `name` carried it) — a UX and
+ * SEO gap. `category` is optional only so a caller without it still renders
+ * ("Каталог" fallback) instead of crashing.
+ *
+ * Gallery is wired to the vanilla `<Lightbox />` (same delegated-click API as
+ * `GalleryGrid.astro`): each slide is a button carrying `data-lightbox` with
+ * a real, optimized full-size URL, so the same three lines of markup work
+ * whether the source is a registry asset or a CMS/public URL.
+ */
+import type { CollectionEntry } from 'astro:content';
+import type { AstroComponentFactory } from 'astro/runtime/server/index.js';
+import { getImage } from 'astro:assets';
+import ContentImage from '../ui/ContentImage.astro';
+import Lightbox from '../common/Lightbox.astro';
+import { SITE } from '../../config/site';
+import { PRIMARY_CTA } from '../../config/nav';
+import { phoneHref } from '../../lib/utils';
+import { asset } from '../../lib/images/registry';
+import { classifyImageSource, type ImageSource } from '../../lib/images/resolve';
+import type { CatalogCategory } from '../../config/schemas';
+
+interface Props {
+  product: CollectionEntry<'products'>;
+  /** Root category — only used for the eyebrow above the `<h1>`. */
+  category?: CatalogCategory;
+  /** Pre-rendered MDX body component, e.g. `const { Content } = await render(product)`. */
+  body?: AstroComponentFactory;
+}
+const { product, category, body: Body } = Astro.props;
+const { title, image, slider, gallery, price, features, brands } = product.data;
+
+// Верхний слайдер: [обложка, ...slider], без дублей, порядок сохранён.
+const images = [...new Set([image, ...slider].filter(Boolean))];
+const hasSpecs = Boolean(price) || brands.length > 0;
+
+/** Полноразмерный адрес для лайтбокса: он открывает картинку по URL из
+ *  data-атрибута, а <Image> отдаёт только srcset. Тот же приём, что в
+ *  GalleryGrid.astro (общий кеш трансформаций с <Image>). */
+async function lightboxUrl(src: ImageSource): Promise<string> {
+  const classified = classifyImageSource(src, asset);
+  if (classified.kind === 'url') return classified.url;
+  if (classified.kind === 'svg') return classified.img.src;
+  const big = await getImage({
+    src: classified.img,
+    width: Math.min(classified.img.width, 2000),
+    format: 'webp',
+  });
+  return big.src;
+}
+const fullUrls = await Promise.all(images.map((src) => lightboxUrl(src)));
+---
+
+<div class="container-page space-y-12 py-10">
+  <div>
+    <span class="eyebrow">{category?.name ?? 'Каталог'}</span>
+    <h1 class="text-3xl font-bold md:text-4xl">{title}</h1>
+  </div>
+
+  <!-- Gallery + specs -->
+  <div class="grid gap-6 lg:grid-cols-12">
+    <div class="flex flex-col gap-3 lg:col-span-8" data-pd-gallery>
+      <div class="card overflow-hidden">
+        {
+          /* Слайд — <button>, а не голая картинка: лайтбокс открывается и с
+             клавиатуры, и `data-pd-slide` остаётся на том же узле, что и
+             раньше (переключение слайдов ниже по-прежнему ищет
+             `[data-pd-slide]`). Группа лайтбокса — все кадры товара, включая
+             скрытые: делегат Lightbox.astro собирает её по data-атрибуту, а
+             не по видимости, поэтому листание идёт по всей галерее. */
+          images.map((src, i) => (
+            <button
+              type="button"
+              data-pd-slide={i}
+              data-lightbox={fullUrls[i]}
+              data-lightbox-group="product"
+              data-goal="gallery_view"
+              aria-label={`Открыть фото ${i + 1} на весь экран`}
+              class={`block w-full cursor-zoom-in overflow-hidden border-0 p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${i === 0 ? '' : 'hidden'}`}
+            >
+              <ContentImage
+                src={src}
+                alt={title}
+                widths={[480, 768, 1024, 1400]}
+                sizes="(min-width: 1024px) 66vw, 100vw"
+                width={1400}
+                height={875}
+                loading={i === 0 ? 'eager' : 'lazy'}
+                class="aspect-[16/10] w-full object-cover"
+              />
+            </button>
+          ))
+        }
+      </div>
+
+      {
+        images.length > 1 && (
+          <div class="grid grid-cols-4 gap-2 sm:grid-cols-5">
+            {images.map((src, i) => (
+              <button
+                type="button"
+                data-pd-thumb={i}
+                aria-current={i === 0 ? 'true' : 'false'}
+                aria-label={`Показать фото ${i + 1}`}
+                class="group overflow-hidden rounded-lg border-2 border-transparent p-0 opacity-65 transition-[border-color,opacity] duration-200 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent aria-[current=true]:border-accent aria-[current=true]:opacity-100"
+              >
+                <ContentImage
+                  src={src}
+                  alt=""
+                  widths={[160, 320]}
+                  sizes="160px"
+                  width={320}
+                  height={240}
+                  class="aspect-[4/3] w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                />
+              </button>
+            ))}
+          </div>
+        )
+      }
+    </div>
+
+    <div class="card flex flex-col gap-5 p-6 lg:col-span-4">
+      {
+        hasSpecs && (
+          <div class="flex flex-col gap-4">
+            {price && (
+              <div class="flex flex-col gap-1">
+                <span class="text-xs font-semibold uppercase tracking-wide text-muted">Цена</span>
+                <span class="text-2xl font-bold">{price}</span>
+              </div>
+            )}
+            {brands.length > 0 && (
+              <div class="flex flex-col gap-1">
+                <span class="text-xs font-semibold uppercase tracking-wide text-muted">Бренды</span>
+                <span class="text-base font-semibold">{brands.join(', ')}</span>
+              </div>
+            )}
+          </div>
+        )
+      }
+      <a href={PRIMARY_CTA.href} class="btn btn-primary" data-goal="cta_click" data-goal-source="product_detail">
+        {PRIMARY_CTA.label}
+      </a>
+      <a
+        href={`tel:${phoneHref(SITE.contact.phoneRaw)}`}
+        class="text-sm font-semibold text-accent hover:underline"
+        data-goal="phone_click"
+        data-goal-source="product_detail"
+      >
+        {SITE.contact.phone}
+      </a>
+    </div>
+  </div>
+
+  <!-- Features -->
+  {
+    features.length > 0 && (
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {features.map((f) => (
+          <div class="card flex items-start gap-3 p-4">
+            <svg
+              class="mt-0.5 h-5 w-5 shrink-0 text-accent"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+            <span class="text-sm font-medium">{f}</span>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  <!-- Body: MDX (via `body` prop) or default slot -->
+  <div class="catalog-prose max-w-3xl">
+    {Body ? <Body /> : <slot />}
+  </div>
+
+  <!-- Нижняя секция «Галерея» (урок боевого проекта): всё, что не витрина —
+       интерьеры заказчиков, цех, доставка. Последняя секция карточки, ПОСЛЕ
+       описания: студийная витрина и факты выше, доказательства внизу.
+       `<details>/<summary>` вместо кнопки+JS: свёрнута по умолчанию,
+       разворачивается без единой строки скрипта, контент достижим без JS.
+       Секции нет в разметке вовсе, пока `gallery` пуста — сайт без нижней
+       галереи ничего не настраивает. Justified-сетка: каждому кадру
+       flex-grow/flex-basis от соотношения сторон (--ar), в ряду все кадры
+       одной высоты, ширина своя, БЕЗ кропа. -->
+  {
+    gallery.length > 0 && (
+      <details class="card overflow-hidden">
+        <summary class="pd-gal-summary flex cursor-pointer select-none items-center justify-between gap-4 p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent md:px-6">
+          <span class="text-lg font-bold md:text-xl">
+            Галерея{' '}
+            <span class="whitespace-nowrap font-normal text-muted">({gallery.length} фото)</span>
+          </span>
+          <svg
+            class="pd-gal-chev h-5 w-5 shrink-0 text-muted"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </summary>
+        <div class="pd-gal-grid p-2.5 pt-0">
+          {gallery.map((src, i) => (
+            <div class="pd-gal-item overflow-hidden rounded-lg">
+              <ContentImage
+                src={src}
+                alt={`${title} — фото ${i + 1}`}
+                widths={[320, 480, 768]}
+                sizes="(min-width: 768px) 30vw, 45vw"
+                width={768}
+                height={576}
+                loading="lazy"
+                class="block h-auto w-full"
+              />
+            </div>
+          ))}
+        </div>
+      </details>
+    )
+  }
+</div>
+
+<!-- Полноэкранный просмотрщик — один на страницу. Делегирует по
+     [data-lightbox], собранным выше. -->
+<Lightbox />
+
+<!-- Gallery: clicking a thumbnail toggles which full-size slide is visible.
+     No src/srcset rewriting — every slide is pre-rendered by ContentImage,
+     so there is nothing to keep in sync (progressive enhancement: without
+     JS the first slide + static thumbnail row still work). -->
+<script is:inline>
+  (function () {
+    function initProductGallery() {
+      document.querySelectorAll('[data-pd-gallery]').forEach(function (root) {
+        if (root.dataset.bound) return;
+        root.dataset.bound = '1';
+        var slides = root.querySelectorAll('[data-pd-slide]');
+        var thumbs = root.querySelectorAll('[data-pd-thumb]');
+        if (!slides.length || !thumbs.length) return;
+        thumbs.forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var index = btn.getAttribute('data-pd-thumb');
+            slides.forEach(function (img) {
+              img.classList.toggle('hidden', img.getAttribute('data-pd-slide') !== index);
+            });
+            thumbs.forEach(function (t) {
+              t.setAttribute('aria-current', String(t === btn));
+            });
+          });
+        });
+      });
+    }
+    document.addEventListener('DOMContentLoaded', initProductGallery);
+    document.addEventListener('astro:page-load', initProductGallery);
+  })();
+</script>
+
+<style>
+  /* Scoped typographic styles for the MDX/markdown body — same recipe as
+     BlogLayout's `.blog-prose` (no typography-plugin dependency). */
+  .catalog-prose :global(h2) {
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+  }
+  .catalog-prose :global(h3) {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+  }
+  .catalog-prose :global(p) {
+    margin-bottom: 1.25rem;
+  }
+  .catalog-prose :global(ul),
+  .catalog-prose :global(ol) {
+    margin: 1.25rem 0;
+    padding-left: 1.5rem;
+    list-style: revert;
+  }
+  .catalog-prose :global(li) {
+    margin-bottom: 0.5rem;
+  }
+  .catalog-prose :global(a) {
+    color: var(--color-accent);
+    text-decoration: underline;
+  }
+  .catalog-prose :global(img) {
+    border-radius: var(--radius-md);
+    margin: 1.5rem 0;
+  }
+  .catalog-prose :global(blockquote) {
+    border-left: 3px solid var(--color-accent);
+    padding-left: 1rem;
+    color: var(--color-muted);
+    font-style: italic;
+    margin: 1.5rem 0;
+  }
+
+  /* Нижняя «Галерея»: justified-строки без кропа — flex-grow/basis от
+     соотношения сторон кадра. --ar проставлять не обязательно: без него
+     кадры делят ряд поровну. */
+  .pd-gal-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .pd-gal-item {
+    flex-grow: 1;
+    flex-basis: 240px;
+    max-width: 100%;
+  }
+  @media (min-width: 768px) {
+    .pd-gal-item {
+      flex-basis: 280px;
+    }
+  }
+  .pd-gal-summary {
+    list-style: none;
+  }
+  .pd-gal-summary::-webkit-details-marker {
+    display: none;
+  }
+  .pd-gal-chev {
+    transition: transform 0.2s ease;
+  }
+  details[open] .pd-gal-chev {
+    transform: rotate(180deg);
+  }
+</style>

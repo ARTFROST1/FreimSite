@@ -1,0 +1,385 @@
+---
+import { ClientRouter } from 'astro:transitions';
+import '../styles/global.css';
+import { SITE, absoluteUrl } from '../config/site';
+import { organizationSchema, breadcrumbSchema } from '../lib/schema';
+import { serializeJsonLd } from '../lib/json-ld';
+import Header from '../components/layout/Header.astro';
+import Footer from '../components/layout/Footer.astro';
+import MobileStickyCTA from '../components/common/MobileStickyCTA.astro';
+import CookieConsent from '../components/common/CookieConsent.astro';
+import YandexMetrika from '../components/analytics/YandexMetrika.astro';
+import AnalyticsRouterHit from '../components/analytics/AnalyticsRouterHit.astro';
+import UTMTracker from '../components/analytics/UTMTracker.astro';
+import ConversionTracking from '../components/analytics/ConversionTracking.astro';
+import EngagementTracking from '../components/analytics/EngagementTracking.astro';
+import EngagementTimeTracking from '../components/analytics/EngagementTimeTracking.astro';
+
+interface Crumb {
+  name: string;
+  url?: string;
+}
+interface Props {
+  title: string;
+  description: string;
+  keywords?: string;
+  ogTitle?: string;
+  ogDescription?: string;
+  ogImage?: string;
+  /** Реальные размеры и alt переданной ogImage. Дефолты соответствуют
+   *  статической обложке `public/og/` (1200×630); страницы с honest-резолвом
+   *  (см. `src/lib/og-image.ts`) передают фактические размеры сгенерированного
+   *  кадра — иначе og:image:width/height врали бы парсерам соцсетей. */
+  ogImageWidth?: number;
+  ogImageHeight?: number;
+  ogImageAlt?: string;
+  ogType?: 'website' | 'article';
+  canonical?: string;
+  noindex?: boolean;
+  /** Override auto breadcrumbs. Omit to auto-derive from the URL path. */
+  breadcrumbs?: Crumb[];
+  /** Hide Header/Footer/CTA chrome (landing pages, legal, etc). */
+  hideChrome?: boolean;
+}
+
+const {
+  title,
+  description,
+  keywords,
+  ogTitle = title,
+  ogDescription = description,
+  ogImage = SITE.ogImage,
+  ogImageWidth = 1200,
+  ogImageHeight = 630,
+  ogImageAlt = ogTitle,
+  ogType = 'website',
+  canonical,
+  noindex = false,
+  breadcrumbs,
+  hideChrome = false,
+} = Astro.props;
+
+const currentUrl = absoluteUrl(Astro.url.pathname);
+const canonicalUrl = canonical ?? currentUrl;
+const ogImageUrl = ogImage.startsWith('http') ? ogImage : absoluteUrl(ogImage);
+
+// ── Auto-generate breadcrumbs from the URL when not provided ──────────────
+const PATH_LABELS: Record<string, string> = {
+  about: 'О нас',
+  gallery: 'Галерея',
+  contacts: 'Контакты',
+  blog: 'Блог',
+  'privacy-policy': 'Политика конфиденциальности',
+  'soglasie-na-obrabotku-dannykh': 'Согласие на обработку данных',
+  terms: 'Пользовательское соглашение',
+};
+
+function autoCrumbs(pathname: string): Crumb[] {
+  const clean = pathname.replace(/\/+$/, '');
+  if (!clean) return [];
+  const segments = clean.split('/').filter(Boolean);
+  const crumbs: Crumb[] = [{ name: 'Главная', url: '/' }];
+  let acc = '';
+  segments.forEach((seg, i) => {
+    acc += `/${seg}/`;
+    const label =
+      PATH_LABELS[seg] ??
+      decodeURIComponent(seg).replace(/[-_]+/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+    crumbs.push({ name: label, ...(i === segments.length - 1 ? {} : { url: acc }) });
+  });
+  return crumbs;
+}
+
+const effectiveCrumbs = breadcrumbs?.length ? breadcrumbs : autoCrumbs(Astro.url.pathname);
+const crumbSchema = effectiveCrumbs.length > 1 ? breadcrumbSchema(effectiveCrumbs) : null;
+
+// ── Верификация Вебмастера/GSC ──────────────────────────────────────────────
+// В отличие от домена/geo (см. config/site.ts) коды верификации выдаются
+// заново под каждый проект/домен, поэтому в стартере — ТОЛЬКО через env, без
+// дефолтов-заглушек: пустой дефолт просто не рендерит тег, а не подставляет
+// чужой боевой токен. Заполняются один раз при подключении Вебмастера/GSC.
+const YANDEX_VERIFICATION = import.meta.env.PUBLIC_YANDEX_VERIFICATION || '';
+const GOOGLE_VERIFICATION = import.meta.env.PUBLIC_GOOGLE_SITE_VERIFICATION || '';
+
+// ── Preconnect к mc.yandex.ru под тем же consent-гейтом, что и счётчик ─────
+// Статический <link rel=preconnect> тратил бы TLS-соединение впустую и
+// конкурировал бы со шрифтами на критическом пути первого визита, если
+// счётчик под консент-гейтом ещё не загружен (или вовсе выключен). Условие
+// ниже ЗЕРКАЛИТ CONSENT_GATE из YandexMetrika.astro (та константа приватная,
+// не экспортируется — сам файл вне scope этой правки): гейт выключен →
+// коннект нужен сразу же, как и сам tag.js; гейт включён → только после
+// согласия. Меняете PUBLIC_METRIKA_CONSENT_GATE или ключ 'cookie-consent' —
+// правьте оба места.
+const METRIKA_CONSENT_GATE = /^(1|true)$/i.test(
+  String(import.meta.env.PUBLIC_METRIKA_CONSENT_GATE ?? '').trim(),
+);
+const METRIKA_PRECONNECT_HOST = 'mc.yandex.ru';
+---
+
+<!doctype html>
+<html lang={SITE.lang}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="author" content={SITE.name} />
+
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {keywords && <meta name="keywords" content={keywords} />}
+    <link rel="canonical" href={canonicalUrl} />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    {YANDEX_VERIFICATION && <meta name="yandex-verification" content={YANDEX_VERIFICATION} />}
+    {GOOGLE_VERIFICATION && <meta name="google-site-verification" content={GOOGLE_VERIFICATION} />}
+
+    <!-- Open Graph -->
+    <meta property="og:type" content={ogType} />
+    <meta property="og:title" content={ogTitle} />
+    <meta property="og:description" content={ogDescription} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:image:width" content={String(ogImageWidth)} />
+    <meta property="og:image:height" content={String(ogImageHeight)} />
+    <meta property="og:image:alt" content={ogImageAlt} />
+    <meta property="og:url" content={currentUrl} />
+    <meta property="og:locale" content={SITE.locale} />
+    <meta property="og:site_name" content={SITE.name} />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={ogTitle} />
+    <meta name="twitter:description" content={ogDescription} />
+    <meta name="twitter:image" content={ogImageUrl} />
+    <meta name="twitter:image:alt" content={ogImageAlt} />
+
+    <!-- Favicons -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#ffffff" />
+
+    <!-- Geo (local SEO) -->
+    <meta name="geo.region" content={SITE.address.country} />
+    <meta name="geo.placename" content={SITE.address.locality} />
+    <meta name="geo.position" content={`${SITE.geo.lat};${SITE.geo.lng}`} />
+    <meta name="ICBM" content={`${SITE.geo.lat}, ${SITE.geo.lng}`} />
+
+    <!-- hreflang (single-locale default) -->
+    <link rel="alternate" hreflang={SITE.lang} href={currentUrl} />
+    <link rel="alternate" hreflang="x-default" href={currentUrl} />
+
+    <!-- RSS -->
+    <link rel="alternate" type="application/rss+xml" title={`${SITE.name} — Блог`} href="/rss.xml" />
+
+    <!-- Ранний DNS+TLS-handshake к mc.yandex.ru — см. пояснение у
+         METRIKA_CONSENT_GATE выше. Рендерится вообще только когда счётчик
+         подключён (PUBLIC_YANDEX_METRIKA_ID задан); внутри — то же условие
+         загрузки, что у tag.js в YandexMetrika.astro. Тело <script> — сырой
+         JS, как и у остальных is:inline в этом файле: оборачивать в шаблонную
+         строку внутри JSX-выражения нельзя, Astro выведет её буквально (та же
+         регрессия, что у YandexMetrika.astro — metrika-alive.test.ts). -->
+    {
+      import.meta.env.PUBLIC_YANDEX_METRIKA_ID && (
+        <script is:inline define:vars={{ gate: METRIKA_CONSENT_GATE, host: METRIKA_PRECONNECT_HOST }}>
+          try {
+            var consented = localStorage.getItem('cookie-consent') === 'accepted';
+            if (!gate || consented) {
+              var l = document.createElement('link');
+              l.rel = 'preconnect';
+              l.href = 'https://' + host;
+              l.crossOrigin = '';
+              document.head.appendChild(l);
+            }
+          } catch (e) {}
+        </script>
+      )
+    }
+
+    <!-- ──  Add self-hosted font preloads here once you ship WOFF2  ──
+         Шрифт лежит в src/assets/fonts/; preload обязан использовать ТОТ ЖЕ
+         импорт, что и @font-face (иначе два разных URL = двойная загрузка):
+         во фронтматтере: import brandUrl from '../assets/fonts/BrandSans.woff2?url';
+    <link rel="preload" as="font" type="font/woff2" href={brandUrl} crossorigin="anonymous" /> -->
+
+    <!--
+      Site-wide structured data.
+      `serializeJsonLd`, never `JSON.stringify` — see lib/json-ld.ts. Both of
+      these currently read from `config/site.ts` (developer-controlled, not
+      CMS-writable), but the helper is mandatory here anyway so that making any
+      of these fields client-editable later cannot silently reopen H-4.
+    -->
+    <script is:inline type="application/ld+json" set:html={serializeJsonLd(organizationSchema())} />
+    {
+      crumbSchema && (
+        <script is:inline type="application/ld+json" set:html={serializeJsonLd(crumbSchema)} />
+      )
+    }
+
+    <ClientRouter />
+
+    <!-- Восстановление позиции прокрутки — по ОРИЕНТИРУ, не по пикселю.
+         Высота длинной страницы не постоянна (ленивый пин сцены, оценки
+         `contain-intrinsic-size` у content-visibility, поздние картинки и
+         шрифты), поэтому сохранённый пиксель указывает уже на другой контент,
+         а если он больше укоротившегося документа — браузер зажимает его в
+         конец, и человек оказывается в футере. Механика — в doc-comment
+         `src/lib/scroll-restore.ts`, разбор — docs/recipes/scroll-pitfalls.md.
+         Селектор ориентиров меняйте здесь, если секции лежат глубже `main`. -->
+    <script>
+      import { initScrollRestore } from '../lib/scroll-restore';
+      document.addEventListener('astro:page-load', () => initScrollRestore());
+    </script>
+
+    <!-- Analytics: counter → SPA hits → UTM capture → goal dispatch → engagement -->
+    <YandexMetrika />
+    <AnalyticsRouterHit />
+    <UTMTracker />
+    <ConversionTracking />
+    <EngagementTracking />
+    <EngagementTimeTracking />
+
+    <!-- Предохранитель content-visibility для ЗАХОДА СРАЗУ С ЯКОРЕМ.
+         Пропущенные секции стоят на ОЦЕНОЧНОЙ высоте (contain-intrinsic-size),
+         поэтому браузер считает цель прыжка по приблизительной раскладке и
+         мажет. Класс должен встать ДО того, как браузер сам прокрутит к
+         якорю, — поэтому это отдельный `is:inline` в <head>, а не часть
+         модуля: модульные скрипты откладываются до конца разбора DOM.
+         Все остальные случаи (клик, hashchange, SPA-переход) обслуживает
+         `src/lib/anchor-nav.ts`.
+         (Тело — сырой текст, не оборачивать в {`…`}.) -->
+    <script is:inline>
+      (function () {
+        if (location.hash.length <= 1) return;
+        var root = document.documentElement;
+        if (root.classList.contains('cv-off')) return;
+        root.classList.add('cv-off');
+        if (document.body) void root.scrollHeight;
+      })();
+    </script>
+
+    <!-- Единая якорная навигация: цель — элемент, а не пиксель, положение
+         читается заново каждый кадр, а после приезда раскладку ещё сторожит
+         ResizeObserver. Механика — в doc-comment `src/lib/anchor-nav.ts` и
+         `src/lib/scroll-to.ts`, разбор с замерами — в
+         docs/recipes/scroll-pitfalls.md §4, §9, §10.
+
+         Первый вызов — при исполнении модуля, а НЕ на `astro:page-load`:
+         это событие приходит на `window.load`, и на холодной загрузке с
+         медленной сетью браузер к тому моменту давно отработал фрагмент.
+         `astro:page-load` нужен уже только SPA-переходам. -->
+    <script>
+      import { initAnchorNav } from '../lib/anchor-nav';
+      initAnchorNav();
+      document.addEventListener('astro:page-load', initAnchorNav);
+    </script>
+
+    <!-- Scroll-reveal system (opt-in via data-reveal on any element).
+         .reveal-ready gates the hidden state: no JS or reduced motion →
+         content is simply visible, nothing is ever hidden from crawlers. -->
+    <script is:inline>
+      (function () {
+        var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (!reduce && 'IntersectionObserver' in window) {
+          document.documentElement.classList.add('reveal-ready');
+          // Keep the class on the incoming document after SPA navigation.
+          document.addEventListener('astro:before-swap', function (ev) {
+            ev.newDocument.documentElement.classList.add('reveal-ready');
+          });
+        }
+      })();
+    </script>
+
+    <slot name="head" />
+  </head>
+
+  <body class="bg-paper text-ink font-body min-h-screen antialiased overflow-x-hidden">
+    {!hideChrome && <Header />}
+    <slot />
+    {!hideChrome && <Footer />}
+    {!hideChrome && <MobileStickyCTA />}
+    <CookieConsent />
+
+    <!-- data-reveal observer: reveals [data-reveal] as they enter the viewport.
+         Elements already on screen at init are revealed instantly (no flash). -->
+    <script is:inline>
+      (function () {
+        function initReveal() {
+          if (!document.documentElement.classList.contains('reveal-ready')) return;
+          var els = document.querySelectorAll('[data-reveal]:not(.is-visible)');
+          if (!els.length) return;
+          var io = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+              if (entry.isIntersecting) {
+                entry.target.classList.add('is-visible');
+                io.unobserve(entry.target);
+              }
+            });
+          }, { rootMargin: '0px 0px -8% 0px' });
+          // Геометрию читаем ТОЛЬКО у первых элементов и ТОЛЬКО чтобы не
+          // мигнуть тем, что уже на экране: остальные забирает observer.
+          // Два ограничения, оба важны:
+          //
+          // 1) Читаем и пишем разными проходами. В однопроходном варианте
+          //    `classList.add` внутри цикла инвалидировал стиль, и следующий
+          //    `getBoundingClientRect()` был обязан заново прогнать
+          //    style+layout — синхронный reflow на каждый элемент подряд.
+          //
+          // 2) Обрываем чтение, как только ушли заведомо ниже экрана. Секции
+          //    страницы могут жить под `content-visibility: auto`
+          //    (global.css), и запрос геометрии у элемента ВНУТРИ пропущенной
+          //    секции заставляет браузер её разложить — сплошной проход по
+          //    всем элементам разложил бы всю страницу и обнулил смысл
+          //    content-visibility. Порядок в DOM здесь совпадает с порядком
+          //    по вертикали, поэтому запас в два экрана надёжно покрывает
+          //    любые локальные перестановки внутри секции.
+          var limit = window.innerHeight * 0.92;
+          var stopProbing = window.innerHeight * 2;
+          var onscreen = [];
+          var offscreen = [];
+          var probing = true;
+          els.forEach(function (el) {
+            if (!probing) {
+              offscreen.push(el);
+              return;
+            }
+            var top = el.getBoundingClientRect().top;
+            if (top > stopProbing) probing = false;
+            (top < limit ? onscreen : offscreen).push(el);
+          });
+          onscreen.forEach(function (el) {
+            el.classList.add('is-visible');
+          });
+          offscreen.forEach(function (el) {
+            io.observe(el);
+          });
+        }
+        initReveal();
+        document.addEventListener('astro:page-load', initReveal);
+      })();
+    </script>
+
+    <!-- fd-edit: click-to-edit overlay, ONLY inside the CMS-portal iframe.
+         Production visitors run this ~6-line check and nothing else.
+         Loads on the first entry (?fd_edit=1) AND on later in-preview pages
+         that carry no query string but were reached inside an already-active
+         editing tab (sessionStorage 'fdEdit.origin', set by fd-edit.js). Both
+         are gated on being inside an iframe. -->
+    <script is:inline>
+      (function () {
+        if (window.parent === window) return;
+        var q = new URLSearchParams(location.search).get('fd_edit') === '1';
+        var stored = false;
+        try {
+          stored = !!sessionStorage.getItem('fdEdit.origin');
+        } catch (e) {
+          /* storage unavailable → query gate only */
+        }
+        if (!q && !stored) return;
+        var fdEditScript = document.createElement('script');
+        fdEditScript.src = '/fd-edit.js';
+        fdEditScript.defer = true;
+        document.head.appendChild(fdEditScript);
+      })();
+    </script>
+  </body>
+</html>

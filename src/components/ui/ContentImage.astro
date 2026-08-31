@@ -1,0 +1,92 @@
+---
+/**
+ * Единственная точка рендера картинки, источник которой может быть двух видов:
+ * `ImageMetadata` (разработчик импортировал из реестра) или строка из контента
+ * (её пишет CMS-портал). Растр из `src/assets` уходит в <Image> с srcset,
+ * публичный путь и SVG — в обычный <img> (sharp SVG не ресайзит, а публичные
+ * файлы Astro не обрабатывает вовсе).
+ *
+ * `widths` обрезаются по реальной ширине оригинала: просить у sharp 1600px из
+ * файла 900px — это апскейл и лишние байты. Аспект берётся из метаданных, так
+ * что `width/height` в разметке всегда честные и вёрстка не скачет — в том
+ * числе в url/svg-ветке: SVG берёт размеры из собственных метаданных реестра,
+ * а публичный URL (например, дефолтный плейсхолдер) — из явных пропсов
+ * `width`/`height`, которые обязан передать вызывающий компонент.
+ */
+import { Image } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+import { asset } from '../../lib/images/registry';
+import { classifyImageSource } from '../../lib/images/resolve';
+
+interface Props {
+  src: ImageMetadata | string;
+  alt: string;
+  /** Кандидаты для srcset. Обрезаются по ширине оригинала. */
+  widths?: number[];
+  sizes?: string;
+  loading?: 'lazy' | 'eager';
+  fetchpriority?: 'high' | 'low' | 'auto';
+  decoding?: 'async' | 'sync' | 'auto';
+  /** Только для url-ветки (SVG и растр берут размеры из своих метаданных
+   *  автоматически) — без них картинка с публичного пути рендерится без
+   *  width/height, и вёрстка скачет (CLS). */
+  width?: number;
+  height?: number;
+  class?: string;
+  [key: string]: unknown;
+}
+
+const {
+  src,
+  alt,
+  widths = [400, 800, 1200, 1600],
+  sizes = '100vw',
+  loading = 'lazy',
+  fetchpriority,
+  decoding = 'async',
+  width,
+  height,
+  class: className,
+  ...rest
+} = Astro.props;
+
+const classified = classifyImageSource(src, asset);
+const isRaster = classified.kind === 'raster';
+// Ширины ≤ оригинала — честные кандидаты. Если ВСЕ запрошенные ширины больше
+// оригинала (апскейл), единственный небитый кандидат — сам оригинал: Astro и
+// так отбрасывает всё, что больше исходника, поэтому принудительно клеить
+// полноразмерный кандидат к обычному набору не нужно (иначе для фото 4000px
+// в srcset всегда просачивается лишний 4000w-твин).
+const fittingWidths = isRaster ? widths.filter((w) => w <= classified.img.width) : [];
+const candidateWidths = isRaster
+  ? [...new Set(fittingWidths.length > 0 ? fittingWidths : [classified.img.width])].sort((a, b) => a - b)
+  : [];
+const plainSrc = classified.kind === 'url' ? classified.url : classified.img.src;
+---
+{
+  classified.kind === 'raster' ? (
+    <Image
+      src={classified.img}
+      alt={alt}
+      widths={candidateWidths}
+      sizes={sizes}
+      loading={loading}
+      fetchpriority={fetchpriority}
+      decoding={decoding}
+      class={className}
+      {...rest}
+    />
+  ) : (
+    <img
+      src={plainSrc}
+      alt={alt}
+      width={classified.kind === 'svg' ? classified.img.width : width}
+      height={classified.kind === 'svg' ? classified.img.height : height}
+      loading={loading}
+      fetchpriority={fetchpriority}
+      decoding={decoding}
+      class={className}
+      {...rest}
+    />
+  )
+}

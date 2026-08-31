@@ -1,0 +1,660 @@
+---
+/**
+ * SCROLL SCENE — пин-сцена: секция «залипает», а контент меняется по скроллу.
+ * Кадры сборки/вращения товара + титры этапов + закрывающий блок.
+ *
+ * Обкатано на конструкторе боевого проекта (пять итераций правок заказчика).
+ * Инварианты, «почему именно так» и приёмка — docs/recipes/scroll-scenes.md.
+ *
+ * БЕЗ ЗАВИСИМОСТЕЙ. Пин — `position: sticky`, инерция — rAF-lerp. GSAP тут
+ * не нужен и сознательно не подключён: ScrollTrigger ради пина приносит
+ * pin-spacer, refresh-цикл и обязательный реинит на смене брейкпоинта. У
+ * sticky высота считается в `svh` — окно меняют, CSS пересчитывает сам,
+ * JS об этом знать не обязан.
+ *
+ * ТРИ ПРАВИЛА, из-за нарушения которых сцену переделывали:
+ *   1. Такты равны и стыкуются без нахлёста → в любой точке прокрутки
+ *      что-то меняется, и на экране ровно один титр.
+ *   2. Сцена обратима. Никаких «одноразовых» анимаций с заморозкой в
+ *      финале: назад всё разбирается тем же ходом колеса.
+ *   3. Кадры не тратят байты, пока посетитель не подошёл к секции, а
+ *      секвенция рисуется в <canvas> (свап `src` мерцает).
+ *
+ * NO-JS / reduced-motion: виден последний кадр и закрывающий блок — то есть
+ * осмысленный итог, а не пустое место.
+ *
+ * @example
+ * ---
+ * import { asset, assetsIn } from '../lib/images/registry';
+ * const frames = [1,2,3,4].map((i) => asset(`scene/stage-${i}.webp`)!.src);
+ * const seq = assetsIn('scene/seq').map((e) => e.img.src);
+ * ---
+ * <ScrollScene frames={frames} seqFrames={seq} stages={[
+ *   { title: 'Каркас', description: 'Сухой массив и берёзовая фанера.' },
+ *   …
+ * ]}>
+ *   <div slot="outro">…заголовок и CTA…</div>
+ * </ScrollScene>
+ */
+export interface ScrollSceneStage {
+  title: string;
+  description?: string;
+}
+
+interface Props {
+  /** По одному кадру на этап (последний — фолбэк без JS). Обязателен. */
+  frames: string[];
+  /** Титры этапов; длина должна совпадать с `frames`. */
+  stages: ScrollSceneStage[];
+  /** Полная секвенция для плавного скраба. Только десктоп, только по подходу. */
+  seqFrames?: string[];
+  /**
+   * Кадры секвенции на границах тактов: [старт, конец 1-го этапа, …].
+   * Длина = stages.length + 1. Без них прогресс мапится линейно, и «этап
+   * собран» в ролике разъезжается с титром.
+   */
+  seqKeys?: number[];
+  /** Сколько экрана прокрутки на один такт. 55 — проверенный дефолт. */
+  beatVh?: number;
+  /** Ширина кадра. Остаток ширины — «воздух» под титры по бокам. */
+  mediaWidth?: string;
+  /** Пропорция кадра. */
+  aspect?: string;
+  id?: string;
+  class?: string;
+}
+
+const {
+  frames,
+  stages,
+  seqFrames = [],
+  seqKeys,
+  beatVh = 55,
+  mediaWidth = '70%',
+  aspect = '16 / 9',
+  id,
+  class: className = '',
+} = Astro.props;
+
+if (!frames?.length) throw new Error('<ScrollScene>: нужен непустой массив frames');
+if (stages?.length !== frames.length) {
+  throw new Error(`<ScrollScene>: stages (${stages?.length ?? 0}) должно совпадать с frames (${frames.length})`);
+}
+if (seqKeys && seqKeys.length !== frames.length + 1) {
+  throw new Error(`<ScrollScene>: seqKeys должно быть ${frames.length + 1} значений (границы тактов)`);
+}
+
+const hasOutro = Astro.slots.has('outro');
+// Такты: по одному на этап + доля на финал. Высота спейсера — в svh, чтобы
+// смена размера окна пересчитывалась самим CSS.
+const OUTRO_BEATS = hasOutro ? 0.6 : 0;
+const BEATS = frames.length + OUTRO_BEATS;
+const lastIdx = frames.length - 1;
+
+const config = JSON.stringify({
+  stages: frames.length,
+  outroBeats: OUTRO_BEATS,
+  seq: seqFrames.length > 1 ? seqFrames : null,
+  seqKeys: seqKeys ?? null,
+});
+---
+
+<section class={`scroll-scene ${className}`} id={id} data-scroll-scene data-config={config}>
+  <div class="scene-spacer" data-scene-spacer style={`--beats:${BEATS};--beat-vh:${beatVh}`}>
+    <div class="scene-sticky">
+      <div class="scene-media" data-scene-media style={`--media-w:${mediaWidth};--media-aspect:${aspect}`}>
+        {
+          /* Реальный `src` только у последнего кадра — он и есть фолбэк без
+             JS. Остальные ждут в `data-src` и подставляются при подходе:
+             одного `loading="lazy"` мало, пока картинки выше не загрузились,
+             страница короче и браузер тянет кадры на первом экране
+             (docs/recipes/images-assets.md). */
+          frames.map((src, i) => (
+            <img
+              class="scene-frame"
+              data-frame={i}
+              src={i === lastIdx ? src : undefined}
+              data-src={i === lastIdx ? undefined : src}
+              alt=""
+              loading="lazy"
+              fetchpriority="low"
+              decoding="async"
+            />
+          ))
+        }
+        {seqFrames.length > 1 && <canvas class="scene-seq" data-scene-seq aria-hidden="true"></canvas>}
+      </div>
+
+      {/* Титры этапов. Декоративны: тот же текст лежит в .scene-a11y для
+          скринридеров, чтобы смена такта не «читалась» повторно. */}
+      <div class="scene-caps" aria-hidden="true">
+        {
+          stages.map((stage, i) => (
+            <div class="scene-cap" data-cap={i}>
+              {/* обёртка нужна ленте на мобиле: раскрытие идёт через
+                  grid-template-rows 0fr→1fr, а не через max-height с
+                  подобранными на глаз величинами */}
+              <div class="scene-cap-body">
+                <span class="scene-cap-num">
+                  {String(i + 1).padStart(2, '0')}
+                  <i>/ {String(stages.length).padStart(2, '0')}</i>
+                </span>
+                <h3 class="scene-cap-title">{stage.title}</h3>
+                {stage.description && (
+                  <div class="scene-cap-descwrap">
+                    <p class="scene-cap-desc">{stage.description}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))
+        }
+      </div>
+
+      {hasOutro && (
+        <div class="scene-outro" data-scene-outro>
+          <slot name="outro" />
+        </div>
+      )}
+    </div>
+  </div>
+
+  {/* Источник правды для скринридеров и краулера: виден, когда сцена не
+      играет (нет JS / reduced-motion), иначе — visually hidden. */}
+  <div class="scene-a11y container-page">
+    {
+      stages.map((stage) => (
+        <div class="scene-a11y-item">
+          <h3>{stage.title}</h3>
+          {stage.description && <p>{stage.description}</p>}
+        </div>
+      ))
+    }
+  </div>
+</section>
+
+<style>
+  .scene-spacer {
+    /* один экран под залипший слой + такты прокрутки; всё в svh, поэтому
+       ресайз и поворот устройства пересчитывает CSS, а не JS */
+    height: calc(100svh + var(--beats) * var(--beat-vh) * 1svh);
+  }
+  .scene-sticky {
+    position: sticky;
+    top: var(--scene-top, 0px);
+    height: calc(100svh - var(--scene-top, 0px));
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: clamp(20px, 3.6svh, 46px);
+    overflow: hidden;
+  }
+
+  /* Кадр по центру, по бокам «воздух» под титры. Ширина ограничена и
+     высотой окна тоже — стопка «кадр + финал» обязана влезать целиком,
+     иначе центрирование даст обрез. */
+  .scene-media {
+    position: relative;
+    width: min(var(--media-w), calc((100svh - var(--scene-top, 0px) - var(--scene-reserve, 360px)) * 1.7778));
+    margin-inline: auto;
+    aspect-ratio: var(--media-aspect);
+    /* оверлеи позиционируются в % кадра — их типографика тоже должна
+       считаться от кадра (cqw), иначе на низком окне подписи наезжают */
+    container-type: inline-size;
+  }
+  .scene-frame,
+  .scene-seq {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .scene-frame {
+    opacity: 0;
+  }
+  /* без JS виден итог — последний кадр */
+  .scene-frame:last-of-type {
+    opacity: 1;
+  }
+  .scene-seq {
+    display: none;
+  }
+  .scroll-scene.seq-on .scene-seq {
+    display: block;
+  }
+  .scroll-scene.seq-on .scene-frame {
+    display: none;
+  }
+
+  /* ---------- титры ---------- */
+  .scene-caps {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .scene-cap {
+    position: absolute;
+    top: 12%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: min(30ch, 42vw);
+    opacity: 0;
+    transition: opacity 0.5s ease-out, transform 0.6s ease-out;
+    transform: translateY(14px);
+  }
+  /* чередуем стороны: соседние титры не появляются в одном углу */
+  .scene-cap:nth-child(odd) {
+    right: clamp(16px, 3vw, 56px);
+    text-align: right;
+    align-items: flex-end;
+  }
+  .scene-cap:nth-child(even) {
+    left: clamp(16px, 3vw, 56px);
+  }
+  .scene-cap.on {
+    opacity: 1;
+    transform: none;
+  }
+  .scene-cap-num {
+    font-family: var(--font-heading, inherit);
+    font-weight: 800;
+    font-size: clamp(11px, 1.3cqw, 14px);
+    letter-spacing: 0.2em;
+    color: var(--color-accent, currentColor);
+  }
+  .scene-cap-num i {
+    font-style: normal;
+    opacity: 0.45;
+  }
+  .scene-cap-title {
+    font-family: var(--font-heading, inherit);
+    font-weight: 900;
+    font-size: clamp(1.6rem, 3vw, 2.8rem);
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+  }
+  .scene-cap-desc {
+    font-size: clamp(13.5px, 1.1vw, 16px);
+    line-height: 1.5;
+    /* вторичный текст — токеном, а не альфой основного: rgba(ink,.55) на
+       светлом фоне даёт 3.7:1 при норме 4.5:1 */
+    color: var(--color-muted, inherit);
+    max-width: 30ch;
+    text-wrap: pretty;
+  }
+
+  /* ---------- закрывающий блок ---------- */
+  .scene-outro {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.6s ease-out, transform 0.7s ease-out;
+    pointer-events: none;
+  }
+  .scene-outro.on {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  /* ---------- фолбэк без JS / reduced-motion ---------- */
+  .scene-a11y {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 24px;
+  }
+  /* Сцена играет → текст этапов прячем визуально, но НЕ из DOM: титры
+     помечены aria-hidden, читалке нужен этот источник. */
+  .scroll-scene.scene-live .scene-a11y {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* На узких экранах боковых колонок нет: титры уходят под кадр лентой —
+     активный крупный, пройденные остаются компактными строками, будущие
+     схлопнуты в ноль (между лентой и финалом не бывает пустой дыры). */
+  @media (max-width: 1023px) {
+    .scene-spacer {
+      height: calc(100svh + var(--beats) * var(--beat-vh) * 0.8svh);
+    }
+    .scene-media {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+    }
+    .scene-caps {
+      position: static;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      margin-top: 14px;
+      padding-inline: 1rem;
+    }
+    /* Лента: будущие такты схлопнуты в ноль, пройденные — компактные
+       строки-чекпоинты, активный раскрыт. Раскрытие — через
+       grid-template-rows 0fr→1fr: не требует подобранных на глаз высот и
+       не дёргает раскладку так, как анимация max-height. */
+    .scene-cap {
+      position: static;
+      display: grid;
+      grid-template-rows: 0fr;
+      max-width: 100%;
+      transform: none;
+      transition: grid-template-rows 0.5s ease-out, opacity 0.45s ease-out;
+    }
+    .scene-cap-body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .scene-cap.on,
+    .scene-cap.done {
+      grid-template-rows: 1fr;
+      opacity: 1;
+    }
+    .scene-cap.on .scene-cap-body,
+    .scene-cap.done .scene-cap-body {
+      padding-bottom: 8px;
+    }
+    .scene-cap.done:not(.on) {
+      opacity: 0.6;
+    }
+    .scene-cap.done:not(.on) .scene-cap-title {
+      font-size: 1.05rem;
+    }
+    /* описание сворачивается тем же приёмом — у пройденного этапа его нет */
+    .scene-cap-descwrap {
+      display: grid;
+      grid-template-rows: 1fr;
+      transition: grid-template-rows 0.45s ease-out;
+    }
+    .scene-cap-descwrap > * {
+      min-height: 0;
+      overflow: hidden;
+    }
+    .scene-cap.done:not(.on) .scene-cap-descwrap {
+      grid-template-rows: 0fr;
+    }
+    .scene-cap-title {
+      font-size: clamp(1.5rem, 7vw, 2.1rem);
+    }
+    .scene-outro {
+      padding-inline: 1rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scene-spacer {
+      height: auto;
+    }
+    .scene-sticky {
+      position: static;
+      height: auto;
+    }
+    .scene-cap,
+    .scene-outro {
+      opacity: 1;
+      transform: none;
+      max-height: none;
+    }
+    .scene-frame {
+      opacity: 0;
+    }
+    .scene-frame:last-of-type {
+      opacity: 1;
+    }
+  }
+</style>
+
+<script>
+  // SPA-safe канон стартера: привязка к DOM на каждую навигацию, а всё
+  // созданное — снимается перед следующей (docs/recipes/animations-motion.md §2).
+  const cleanups: Array<() => void> = [];
+
+  function teardownScenes(): void {
+    while (cleanups.length) cleanups.pop()!();
+  }
+  document.addEventListener('astro:before-swap', teardownScenes);
+
+  function initScene(root: HTMLElement): void {
+    const spacer = root.querySelector<HTMLElement>('[data-scene-spacer]');
+    const media = root.querySelector<HTMLElement>('[data-scene-media]');
+    if (!spacer || !media) return;
+
+    const cfg = JSON.parse(root.dataset.config || '{}') as {
+      stages: number;
+      outroBeats: number;
+      seq: string[] | null;
+      seqKeys: number[] | null;
+    };
+
+    const caps = Array.from(root.querySelectorAll<HTMLElement>('[data-cap]'));
+    const outro = root.querySelector<HTMLElement>('[data-scene-outro]');
+    const frames = Array.from(root.querySelectorAll<HTMLImageElement>('.scene-frame'));
+    const canvas = root.querySelector<HTMLCanvasElement>('[data-scene-seq]');
+    const ctx = canvas?.getContext('2d') ?? null;
+
+    // reduced-motion: показываем итог и не заводим никакой цикл.
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      caps.forEach((c) => c.classList.add('on', 'done'));
+      outro?.classList.add('on');
+      return;
+    }
+    root.classList.add('scene-live');
+
+    // ---------- раскадровка ----------
+    // Такты равны и стыкуются: полуоткрытые окна [начало, конец) — на стыке
+    // ровно один титр. Финалу отведён свой такт, последний титр держится до
+    // его начала, поэтому пустого хода между сборкой и финалом нет.
+    const STAGES = cfg.stages;
+    const BEATS = STAGES + cfg.outroBeats;
+    const ASSEMBLY_END = STAGES / BEATS;
+    const stageAt = (i: number) => (i / STAGES) * ASSEMBLY_END;
+    const OUTRO_AT = cfg.outroBeats ? ASSEMBLY_END + (1 - ASSEMBLY_END) * 0.45 : 2;
+    const capWins = Array.from({ length: STAGES }, (_, i) => [
+      stageAt(i),
+      i === STAGES - 1 ? Math.min(OUTRO_AT, 1) : stageAt(i + 1),
+    ]);
+    const CUT = 0.016; // полуширина кроссфейда, центрирован на границе такта
+
+    const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+    const span = (p: number, a: number, b: number) => clamp01((p - a) / (b - a));
+    const smooth = (t: number) => t * t * (3 - 2 * t);
+
+    // ---------- загрузка кадров: только по подходу И после load ----------
+    // Тот, кто не доскроллил до секции, не платит за неё ни байта
+    // (docs/PERFORMANCE.md §7).
+    let seq: HTMLImageElement[] = [];
+    let seqReady = false;
+    let seqDrawn = false;
+    let seqLast = -1;
+
+    const whenLoaded = (cb: () => void) => {
+      if (document.readyState === 'complete') cb();
+      else window.addEventListener('load', cb, { once: true });
+    };
+
+    function warmFrames(): void {
+      frames.forEach((img) => {
+        const pending = img.dataset.src;
+        if (pending && !img.getAttribute('src')) {
+          img.src = pending;
+          delete img.dataset.src;
+        }
+        // «загружено» ≠ «декодировано»: без прогрева первый показ мигает
+        void img.decode?.().catch(() => {});
+      });
+    }
+
+    function loadSequence(): void {
+      if (!cfg.seq || !ctx) return;
+      if (!window.matchMedia('(min-width:1024px)').matches) return; // мобайл живёт на базе
+      const conn = (navigator as Navigator & {
+        connection?: { saveData?: boolean; effectiveType?: string };
+      }).connection;
+      if (conn?.saveData || /^(slow-)?2g$/.test(conn?.effectiveType ?? '')) return;
+
+      const idle: (cb: () => void) => void =
+        'requestIdleCallback' in window
+          ? (cb) => (window as Window).requestIdleCallback(() => cb())
+          : (cb) => window.setTimeout(cb, 800);
+      idle(() => {
+        const imgs = cfg.seq!.map((u) => {
+          const im = new Image();
+          im.decoding = 'async';
+          im.src = u;
+          return im;
+        });
+        // готовность — по decode(), не по onload
+        Promise.allSettled(imgs.map((im) => im.decode?.() ?? Promise.resolve())).then(() => {
+          seq = imgs;
+          seqReady = true;
+        });
+      });
+    }
+
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver(
+        (entries) => {
+          if (!entries.some((e) => e.isIntersecting)) return;
+          io.disconnect();
+          whenLoaded(() => {
+            warmFrames();
+            loadSequence();
+          });
+        },
+        { rootMargin: '250% 0px' }, // ~2,5 экрана форы на докачку и декод
+      );
+      io.observe(root);
+      cleanups.push(() => io.disconnect());
+    } else {
+      whenLoaded(() => {
+        warmFrames();
+        loadSequence();
+      });
+    }
+
+    // ---------- отрисовка ----------
+    frames.forEach((img, i) => (img.style.opacity = i === 0 ? '1' : '0'));
+
+    function seqFrameAt(p: number): number {
+      const last = seq.length - 1;
+      const keys = cfg.seqKeys;
+      if (!keys) return Math.round(clamp01(p / ASSEMBLY_END) * last);
+      const t = clamp01(p / ASSEMBLY_END) * STAGES;
+      const i = Math.min(STAGES - 1, Math.floor(t));
+      const a = keys[i]!;
+      const b = keys[i + 1]!;
+      return Math.min(last, Math.round(a + (b - a) * (t - i)));
+    }
+
+    function render(p: number): void {
+      // Секвенция берёт верх, только когда в канвасе реально что-то есть:
+      // иначе `seq-on` покажет пустой холст поверх готовых кадров.
+      let usingSeq = false;
+      if (seqReady && seq.length && ctx && canvas) {
+        const fi = seqFrameAt(p);
+        const frame = seq[fi];
+        if (fi !== seqLast && frame?.complete && frame.naturalWidth) {
+          if (canvas.width !== frame.naturalWidth) {
+            canvas.width = frame.naturalWidth;
+            canvas.height = frame.naturalHeight;
+          }
+          // drawImage держит предыдущий кадр, пока не готов новый — в отличие
+          // от свапа `src`, который мерцает пустотой на каждом шаге
+          ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+          seqLast = fi;
+          seqDrawn = true;
+        }
+        usingSeq = seqDrawn;
+      }
+      root.classList.toggle('seq-on', usingSeq);
+
+      if (!usingSeq) {
+        for (let i = 1; i < frames.length; i++) {
+          const s = stageAt(i);
+          frames[i]!.style.opacity = String(smooth(span(p, s - CUT, s + CUT)));
+        }
+      }
+
+      let step = -1;
+      caps.forEach((cap, i) => {
+        const [from, to] = capWins[i]!;
+        const on = p >= from && p < to;
+        if (on) step = i;
+        cap.classList.toggle('on', on);
+        cap.classList.toggle('done', p >= to);
+      });
+      // Слепок состояния для QA-харнесса: без индекса кадра проверка
+      // «мёртвых зон» считает весь такт застывшим — титр-то внутри такта
+      // не меняется.
+      root.dataset.step = String(step);
+      root.dataset.frame = usingSeq ? String(seqLast) : String(Math.round(p * 1000));
+
+      outro?.classList.toggle('on', p >= OUTRO_AT);
+      if (outro) outro.inert = p < OUTRO_AT; // скрытая CTA — вне Tab-порядка
+    }
+
+    // ---------- ход сцены ----------
+    // Прогресс — из геометрии спейсера, инерция — lerp. Ни pin-spacer, ни
+    // refresh не нужны: пин делает CSS, ресайз пересчитывается сам.
+    const progress = (): number => {
+      const rect = spacer!.getBoundingClientRect();
+      const travel = rect.height - window.innerHeight;
+      return travel > 0 ? clamp01(-rect.top / travel) : 0;
+    };
+
+    let current = progress();
+    let raf = 0;
+    let running = false;
+
+    function loop(): void {
+      const target = progress();
+      current += (target - current) * 0.18;
+      if (Math.abs(target - current) < 0.0005) current = target;
+      render(current);
+      if (running) raf = requestAnimationFrame(loop);
+    }
+
+    // Цикл крутится только пока сцена в кадре — вне экрана ничего не тикает.
+    const gate = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.some((e) => e.isIntersecting);
+        if (visible === running) return;
+        running = visible;
+        if (visible) raf = requestAnimationFrame(loop);
+        else {
+          cancelAnimationFrame(raf);
+          current = progress();
+          render(current); // край: замереть в честном состоянии, не в «призрачном»
+        }
+      },
+      { rootMargin: '10% 0px' },
+    );
+    gate.observe(spacer);
+    cleanups.push(() => {
+      gate.disconnect();
+      cancelAnimationFrame(raf);
+      running = false;
+    });
+
+    render(current);
+  }
+
+  function initScenes(): void {
+    teardownScenes();
+    document.querySelectorAll<HTMLElement>('[data-scroll-scene]').forEach(initScene);
+  }
+
+  document.addEventListener('astro:page-load', initScenes);
+</script>

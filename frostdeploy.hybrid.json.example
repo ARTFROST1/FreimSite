@@ -1,0 +1,68 @@
+{
+  "services": [
+    {
+      "name": "app",
+      "runtime": "node",
+      "role": "web",
+      "rootDir": ".",
+      "build": {
+        "command": "npm run build",
+        "output": "dist",
+        "install": "auto"
+      },
+      "run": {
+        "command": "node --env-file-if-exists=.env --import ./server/lead-flusher.mjs dist/server/entry.mjs",
+        "healthcheckPath": "/"
+      },
+      "assets": {
+        "root": "dist/client",
+        "paths": [
+          "/_astro/*"
+        ]
+      },
+      "nodeVersion": "22",
+      "resources": {
+        "memMax": "1G",
+        "cpuQuota": "150%"
+      }
+    },
+    {
+      "name": "telegram-bot",
+      "runtime": "python",
+      "role": "worker",
+      "rootDir": "bots/telegram",
+      "build": {
+        "install": "auto"
+      },
+      "run": {
+        "command": ".venv/bin/python bot.py",
+        "env": {
+          "PYTHONUNBUFFERED": "1"
+        }
+      },
+      "pythonVersion": "3.12",
+      "resources": {
+        "memMax": "256M"
+      }
+    },
+    {
+      "name": "max-bot",
+      "runtime": "python",
+      "role": "worker",
+      "rootDir": "bots/max",
+      "build": {
+        "install": "auto"
+      },
+      "run": {
+        "command": ".venv/bin/python bot.py",
+        "env": {
+          "PYTHONUNBUFFERED": "1"
+        }
+      },
+      "pythonVersion": "3.12",
+      "resources": {
+        "memMax": "256M"
+      }
+    }
+  ]
+}

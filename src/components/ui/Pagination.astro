@@ -1,0 +1,161 @@
+---
+/**
+ * Pagination — доступная пагинация списков (блог, каталог, галерея).
+ *
+ * Паттерн — accessible-astro-components/Pagination (MIT):
+ * `<nav aria-label>` + `<ul>`, «первая / назад / вперёд / последняя» —
+ * ссылки, а там, где идти некуда, `<span class="disabled">` (НЕ ссылка на
+ * саму себя и не `<a>` без href — скринридер не должен объявлять «ссылку»,
+ * которая никуда не ведёт); текущая страница — `aria-current="page"`.
+ * Между ними — окно номеров ±2 вокруг текущей с многоточиями; расчёт окна и
+ * ссылок — в `src/lib/pagination.ts` (покрыт unit-тестом).
+ *
+ * Использование (блог):
+ *   <Pagination currentPage={2} totalPages={7} href={(n) => pageUrl(n, { base: '/blog/' })} />
+ *
+ * Все подписи — пропы с русскими дефолтами; в `progressLabel`/`pageLabel`
+ * работают плейсхолдеры `{current}`, `{total}`, `{n}`. Не рендерится вовсе
+ * при одной странице (`totalPages <= 1`) — пустая навигация только шумит.
+ */
+import { formatPageLabel, paginationLinks, visiblePages } from '../../lib/pagination';
+
+interface Props {
+  currentPage: number;
+  totalPages: number;
+  /** URL страницы по её номеру — единственный источник адресов. */
+  href: (page: number) => string;
+  /** Сколько соседей показывать по обе стороны от текущей. */
+  around?: number;
+  class?: string;
+  ariaLabel?: string;
+  firstPageLabel?: string;
+  previousPageLabel?: string;
+  nextPageLabel?: string;
+  lastPageLabel?: string;
+  /** aria-label номерной ссылки: `{n}` → номер. */
+  pageLabel?: string;
+  /** Текстовый статус под навигацией: `{current}`, `{total}`. */
+  progressLabel?: string;
+}
+
+const {
+  currentPage,
+  totalPages,
+  href,
+  around = 2,
+  class: className,
+  ariaLabel = 'Пагинация',
+  firstPageLabel = 'Первая',
+  previousPageLabel = 'Назад',
+  nextPageLabel = 'Вперёд',
+  lastPageLabel = 'Последняя',
+  pageLabel = 'Страница {n}',
+  progressLabel = 'Страница {current} из {total}',
+} = Astro.props;
+
+const total = Math.max(1, Math.floor(totalPages));
+const current = Math.min(Math.max(Math.floor(currentPage) || 1, 1), total);
+const links = paginationLinks(current, total, href);
+const window = visiblePages(current, total, around);
+const progress = formatPageLabel(progressLabel, { current, total });
+
+/** [key, href|null, подпись, svg-path, viewBox] для четырёх крайних кнопок —
+ *  чтобы не копировать разметку `<a>`/`<span class="disabled">` четыре раза. */
+type Edge = { key: string; to: string | null; label: string; d: string };
+const before: Edge[] = [
+  { key: 'first', to: links.first, label: firstPageLabel, d: 'm17 6-6 6 6 6M11 6l-6 6 6 6' },
+  { key: 'previous', to: links.previous, label: previousPageLabel, d: 'm14 6-6 6 6 6' },
+];
+const after: Edge[] = [
+  { key: 'next', to: links.next, label: nextPageLabel, d: 'm10 6 6 6-6 6' },
+  { key: 'last', to: links.last, label: lastPageLabel, d: 'm7 6 6 6-6 6M13 6l6 6-6 6' },
+];
+const cell =
+  'inline-flex h-10 min-w-10 items-center justify-center rounded-lg border px-2 text-sm font-medium transition-colors';
+---
+{
+  total > 1 && (
+    <nav class:list={['pagination', className]} aria-label={ariaLabel}>
+      <ul class="flex flex-wrap items-center justify-center gap-2">
+        {before.map(({ key, to, label, d }) => (
+          <li data-edge={key}>
+            {to ? (
+              <a href={to} aria-label={label} title={label} class={`${cell} border-line hover:border-accent hover:text-accent`}>
+                <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d={d} />
+                </svg>
+              </a>
+            ) : (
+              <span class={`disabled ${cell} border-line`} aria-hidden="true">
+                <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d={d} />
+                </svg>
+              </span>
+            )}
+          </li>
+        ))}
+
+        {window.map((token) =>
+          token === 'ellipsis' ? (
+            <li>
+              <span class="ellipsis inline-flex h-10 min-w-6 items-center justify-center text-muted" aria-hidden="true">
+                …
+              </span>
+            </li>
+          ) : token === current ? (
+            <li>
+              <a
+                href={href(token)}
+                aria-current="page"
+                aria-label={formatPageLabel(pageLabel, { n: token })}
+                class={`${cell} border-accent bg-accent text-accent-ink`}
+              >
+                {token}
+              </a>
+            </li>
+          ) : (
+            <li>
+              <a
+                href={href(token)}
+                aria-label={formatPageLabel(pageLabel, { n: token })}
+                class={`${cell} border-line hover:border-accent hover:text-accent`}
+              >
+                {token}
+              </a>
+            </li>
+          ),
+        )}
+
+        {after.map(({ key, to, label, d }) => (
+          <li data-edge={key}>
+            {to ? (
+              <a href={to} aria-label={label} title={label} class={`${cell} border-line hover:border-accent hover:text-accent`}>
+                <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d={d} />
+                </svg>
+              </a>
+            ) : (
+              <span class={`disabled ${cell} border-line`} aria-hidden="true">
+                <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d={d} />
+                </svg>
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p class="mt-3 text-center text-sm text-muted">{progress}</p>
+    </nav>
+  )
+}
+
+<style>
+  .pagination .disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .pagination a:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+</style>

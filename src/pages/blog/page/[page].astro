@@ -1,0 +1,29 @@
+---
+/**
+ * /blog/page/N/ — страницы списка блога со второй и дальше. Первая живёт на
+ * /blog/ (index.astro), поэтому путь с page === '1' отфильтрован: у
+ * `[page]`-роута Astro `paginate()` нумерует первую страницу как «1», и без
+ * фильтра появился бы дубль корня /blog/page/1/. Сортировка та же, что на
+ * index.astro — иначе посты «переезжали» бы между страницами.
+ */
+import type { GetStaticPaths, Page } from 'astro';
+import type { CollectionEntry } from 'astro:content';
+import { getCollection } from 'astro:content';
+import BlogListing from '../../../components/blog/BlogListing.astro';
+import { BLOG_PAGE_SIZE } from '../../../config/site';
+
+export const getStaticPaths = (async ({ paginate }) => {
+  const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
+    (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
+  );
+  return paginate(posts, { pageSize: BLOG_PAGE_SIZE }).filter(
+    ({ params }) => params.page !== undefined && params.page !== '1',
+  );
+}) satisfies GetStaticPaths;
+
+interface Props {
+  page: Page<CollectionEntry<'blog'>>;
+}
+const { page } = Astro.props;
+---
+<BlogListing posts={page.data} currentPage={page.currentPage} totalPages={page.lastPage} />

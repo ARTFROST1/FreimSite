@@ -1,0 +1,230 @@
+---
+/**
+ * Marquee — infinite horizontal loop, pure CSS (0 KB JS).
+ * The track is rendered TWICE and translated -50%, so the loop is seamless.
+ * Pauses on hover; static under prefers-reduced-motion.
+ *
+ * Two content modes (pick one per usage):
+ *   - `items`     — logos/photos, rendered via <ContentImage>.
+ *   - `textItems` — short phrases joined by a "·" separator (ported from
+ *     a client project's Marquee.astro, task W2-G). `data-cms` is printed ONLY on
+ *     the FIRST copy of the track — the second copy is `aria-hidden` (a
+ *     decorative loop dupe), so annotating it too would point the same
+ *     `data-cms` value at two DOM nodes with identical text; a click-to-edit
+ *     re-render still updates BOTH copies together because they share
+ *     content, just one of them isn't independently addressable.
+ *
+ * `variant="contrast"` wraps the track in a solid `--color-ink`/`--color-paper`
+ * slab instead of the page background — for a phrase strip between two
+ * lighter sections. Unlike the original client project's version, this has NO background
+ * texture/grain layer: that relied on project-specific texture assets the
+ * starter doesn't ship, and a flat slab on brand tokens is the honest
+ * template default (swap `--color-ink`/`--color-paper` for a rebrand, not
+ * this component).
+ *
+ * Use for client logos, partner badges, review snippets, photo strips, or a
+ * short phrase strip between sections.
+ *
+ * Usage:
+ *   <Marquee items={[{ src: '/images/logo1.svg', alt: 'Клиент 1' }, …]} />
+ *   <Marquee items={[{ label: 'Без логотипа', href: 'https://…', cmsLabel: 'partners:p1:name' }]} />
+ *   <Marquee textItems={[{ id: 'p1', text: 'Быстро' }, …]} variant="contrast" />
+ *   <Marquee speed={40}> <span>Любой markup через slot</span> … </Marquee>
+ */
+import ContentImage from './ContentImage.astro';
+import type { ImageSource } from '../../lib/images/resolve';
+
+interface MarqueeItem {
+  /** Картинка (ключ реестра / публичный путь / ImageMetadata). Без неё
+   *  рендерится текстовая плашка из `label` — так партнёр без логотипа не
+   *  выпадает из ленты (LogosSection). */
+  src?: ImageSource;
+  alt?: string;
+  /** Item height in px (width auto). */
+  height?: number;
+  /** Обернуть элемент в ссылку. В дубль-копии трека ссылка получает
+   *  `tabindex="-1"` — копия `aria-hidden`, фокус туда попадать не должен. */
+  href?: string;
+  /** Название (accessible name + текст плашки без `src`). Когда есть и `src`,
+   *  и `label`, картинка идёт с `alt=""`, а `label` — `sr-only`: одно имя,
+   *  а не два подряд для скринридера. */
+  label?: string;
+  /** `data-cms` для картинки (+ `data-fd-attr="src"`), только первая копия трека. */
+  cmsSrc?: string;
+  /** `data-cms` для `label`, только первая копия трека. */
+  cmsLabel?: string;
+}
+interface MarqueeTextItem {
+  id: string;
+  text: string;
+}
+interface Props {
+  items?: MarqueeItem[];
+  /** Short phrases mode — an alternative to `items` (see file doc above). */
+  textItems?: MarqueeTextItem[];
+  /** `data-cms` collection name for phrase text (`<collection>:<id>:text`, first track copy only). */
+  textCollection?: string;
+  /** Full-loop duration in seconds — bigger is slower. */
+  speed?: number;
+  /** Gap between items, any CSS length. Ignored in text mode (phrases use the "·" separator instead). */
+  gap?: string;
+  /** Fade the edges into the background. */
+  fadeEdges?: boolean;
+  /** 'plain' (default) — transparent background. 'contrast' — solid ink/paper slab, see file doc above. */
+  variant?: 'plain' | 'contrast';
+  class?: string;
+}
+const {
+  items = [],
+  textItems = [],
+  textCollection = 'marquee',
+  speed = 30,
+  gap = '3rem',
+  fadeEdges = true,
+  variant = 'plain',
+  class: className = '',
+} = Astro.props;
+
+const isText = textItems.length > 0;
+---
+<div class:list={['marquee-outer', variant === 'contrast' && 'marquee-contrast']}>
+  <div
+    class:list={['marquee', fadeEdges && 'marquee-fade', className]}
+    style={`--marquee-speed: ${speed}s; --marquee-gap: ${gap};`}
+  >
+    <div class="marquee-track">
+      {
+        [0, 1].map((copy) => (
+          <div class="marquee-group" aria-hidden={copy === 1 ? 'true' : undefined}>
+            {isText ? (
+              <span class="marquee-phrases">
+                {textItems.map((item) => (
+                  <>
+                    <span data-cms={copy === 0 ? `${textCollection}:${item.id}:text` : undefined}>
+                      {item.text}
+                    </span>
+                    <b aria-hidden="true">·</b>
+                  </>
+                ))}
+              </span>
+            ) : (
+              items.map((item) => {
+                const Wrap = item.href ? 'a' : 'span';
+                const h = item.height ?? 40;
+                return (
+                  <Wrap
+                    class="marquee-item"
+                    href={item.href}
+                    tabindex={item.href && copy === 1 ? -1 : undefined}
+                    target={item.href ? '_blank' : undefined}
+                    rel={item.href ? 'noopener' : undefined}
+                  >
+                    {item.src ? (
+                      <ContentImage
+                        src={item.src}
+                        alt={copy === 0 && !item.label ? (item.alt ?? '') : ''}
+                        widths={[h * 2, h * 3]}
+                        sizes={`${h}px`}
+                        style={`height: ${h}px; width: auto;`}
+                        data-cms={copy === 0 ? item.cmsSrc : undefined}
+                        data-fd-attr={copy === 0 && item.cmsSrc ? 'src' : undefined}
+                      />
+                    ) : null}
+                    {item.label ? (
+                      <span
+                        class:list={[item.src ? 'sr-only' : 'marquee-label']}
+                        data-cms={copy === 0 ? item.cmsLabel : undefined}
+                      >
+                        {item.label}
+                      </span>
+                    ) : null}
+                  </Wrap>
+                );
+              })
+            )}
+            <slot />
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</div>
+
+<style>
+  .marquee-outer {
+    width: 100%;
+  }
+  .marquee {
+    overflow: hidden;
+    width: 100%;
+  }
+  .marquee-fade {
+    mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+  }
+  .marquee-track {
+    display: flex;
+    width: max-content;
+    animation: marquee-scroll var(--marquee-speed) linear infinite;
+  }
+  .marquee:hover .marquee-track {
+    animation-play-state: paused;
+  }
+  .marquee-group {
+    display: flex;
+    align-items: center;
+    gap: var(--marquee-gap);
+    padding-right: var(--marquee-gap);
+  }
+  .marquee-item {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    color: inherit;
+    text-decoration: none;
+  }
+  /* Текстовая плашка вместо отсутствующего логотипа (см. `label` в MarqueeItem). */
+  .marquee-label {
+    white-space: nowrap;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: clamp(1rem, 1.6vw, 1.25rem);
+    letter-spacing: 0.02em;
+    opacity: 0.7;
+  }
+  @keyframes marquee-scroll {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .marquee-track {
+      animation: none;
+    }
+  }
+
+  /* ---- text mode (phrase strip) ---- */
+  .marquee-phrases {
+    white-space: nowrap;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: clamp(1rem, 1.8vw, 1.35rem);
+    letter-spacing: 0.04em;
+  }
+  .marquee-phrases b {
+    color: var(--color-accent);
+    font-weight: 700;
+    padding: 0 26px;
+    font-size: 1.25em;
+    line-height: 1;
+    vertical-align: -0.06em;
+  }
+
+  /* ---- contrast slab (variant="contrast") ----
+     Flat solid background on existing tokens — deliberately no texture/grain,
+     see file doc-comment above. */
+  .marquee-contrast {
+    background: var(--color-ink);
+    color: var(--color-paper);
+    padding: 2.5rem 0;
+  }
+</style>

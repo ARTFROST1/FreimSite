@@ -1,0 +1,20 @@
+[
+  {
+    "id": "slide-1",
+    "title": "Первый блок",
+    "description": "Опишите ключевую особенность или услугу.",
+    "image": "cms/697f7b3a-a5b7-4118-b105-90d8526ad2c4.png"
+  },
+  {
+    "id": "slide-2",
+    "title": "Второй блок",
+    "description": "Опишите ключевую особенность или услугу.",
+    "image": "cms/70c98b26-d5c0-41d7-be2d-26af199ebd8f.jpg"
+  },
+  {
+    "id": "slide-3",
+    "title": "Третий блок",
+    "description": "Опишите ключевую особенность или услугу.",
+    "image": "/images/placeholder.svg"
+  }
+]

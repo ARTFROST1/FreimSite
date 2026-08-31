@@ -1,0 +1,63 @@
+---
+/**
+ * GALLERY (home teaser) — CSS-only horizontal scroll-snap strip. 0 KB JS.
+ * The full lightbox gallery lives on /gallery/ (React island). Pass image
+ * paths via `images`; defaults to placeholders.
+ */
+import { getEntry } from 'astro:content';
+import ContentImage from '../ui/ContentImage.astro';
+import type { ImageSource } from '../../lib/images/resolve';
+
+const T = (await getEntry('sections', 'main'))!.data.gallery;
+
+interface Props {
+  eyebrow?: string;
+  title?: string;
+  images?: ImageSource[];
+  moreHref?: string;
+  /** See IntroSection's `cmsScope` — same override mechanism. */
+  cmsScope?: string;
+}
+const {
+  eyebrow = T.eyebrow,
+  title = T.title,
+  images = Array.from({ length: 8 }, () => '/images/placeholder.svg'),
+  moreHref = '/gallery/',
+  cmsScope = 'sections::gallery',
+} = Astro.props;
+---
+<section class="section">
+  <div class="container-page">
+    <div class="mb-8 flex items-end justify-between gap-4">
+      <div>
+        <p class="eyebrow mb-3" data-cms={`${cmsScope}.eyebrow`}>{eyebrow}</p>
+        <h2 class="text-3xl font-bold md:text-4xl" data-cms={`${cmsScope}.title`}>{title}</h2>
+      </div>
+      <a href={moreHref} class="btn btn-ghost hidden shrink-0 sm:inline-flex">Смотреть все →</a>
+    </div>
+  </div>
+
+  <!-- Full-bleed scroller -->
+  <div class="scroll-x px-4 pb-4 md:px-8">
+    {
+      images.map((src, i) => (
+        <a
+          href={moreHref}
+          class="block h-64 w-80 overflow-hidden rounded-xl border border-line md:h-80 md:w-[28rem]"
+          data-goal="gallery_view"
+        >
+          <ContentImage
+            src={src}
+            alt={`Фото ${i + 1}`}
+            widths={[320, 448, 896]}
+            sizes="(min-width: 768px) 28rem, 20rem"
+            class="h-full w-full object-cover transition-transform duration-300 hover:scale-105"
+          />
+        </a>
+      ))
+    }
+  </div>
+  <div class="container-page mt-4 text-center sm:hidden">
+    <a href={moreHref} class="btn btn-ghost">Смотреть все →</a>
+  </div>
+</section>

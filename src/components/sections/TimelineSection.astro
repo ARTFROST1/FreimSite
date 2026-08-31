@@ -1,0 +1,141 @@
+---
+/**
+ * TIMELINE — история компании / этапы. Данные из коллекции `timeline`
+ * (src/content/home/timeline.json), заголовки — `sections.timeline`.
+ * Только CSS, 0 KB JS.
+ *
+ * ВАРИАНТЫ (`variant`) — только раскладка, данные и `data-cms` одинаковые:
+ *   - `vertical`  (default) — одна колонка, линия слева, точка на каждой вехе;
+ *   - `alternate` — на десктопе (md+) линия по центру, карточки зигзагом
+ *                   слева/справа; на мобиле схлопывается в `vertical`.
+ *
+ * Порядок вех — порядок массива в JSON (перетаскивание в портале = порядок на
+ * сайте), поэтому поля `order` нет — как и у остальных коллекций.
+ */
+import { getCollection, getEntry } from 'astro:content';
+
+const ITEMS = (await getCollection('timeline')).map((e) => e.data);
+const T = (await getEntry('sections', 'main'))!.data.timeline;
+
+interface Props {
+  eyebrow?: string;
+  title?: string;
+  /** `vertical` — одна колонка; `alternate` — зигзаг на десктопе. */
+  variant?: 'vertical' | 'alternate';
+  /** См. `cmsScope` у IntroSection — тот же механизм переопределения. */
+  cmsScope?: string;
+  /** `id` секции для якоря. */
+  id?: string;
+}
+const {
+  eyebrow = T.eyebrow,
+  title = T.title,
+  variant = 'vertical',
+  cmsScope = 'sections::timeline',
+  id = 'timeline',
+} = Astro.props;
+---
+<section id={id} class="section">
+  <div class="container-page">
+    <div class="mx-auto max-w-2xl text-center">
+      <p class="eyebrow mb-3" data-cms={`${cmsScope}.eyebrow`}>{eyebrow}</p>
+      <h2 class="text-3xl font-bold md:text-4xl" data-cms={`${cmsScope}.title`}>{title}</h2>
+    </div>
+
+    <ol class:list={['tl mt-12', variant === 'alternate' && 'tl-alternate']}>
+      {
+        ITEMS.map((item) => (
+          <li class="tl-item">
+            <span class="tl-dot" aria-hidden="true"></span>
+            <div class="tl-card card">
+              <p class="eyebrow" data-cms={`timeline:${item.id}:date`}>{item.date}</p>
+              <h3 class="mt-2 text-lg font-semibold" data-cms={`timeline:${item.id}:title`}>{item.title}</h3>
+              <p class="mt-2 text-sm text-muted" data-cms={`timeline:${item.id}:description`}>{item.description}</p>
+            </div>
+          </li>
+        ))
+      }
+    </ol>
+  </div>
+</section>
+
+<style>
+  /* ---- база: одна колонка, линия слева ---- */
+  .tl {
+    --tl-x: 0.75rem; /* координата линии от левого края списка */
+    --tl-dot: 1rem;
+    position: relative;
+    max-width: 48rem;
+    margin-inline: auto;
+    padding: 0;
+    list-style: none;
+  }
+  .tl::before {
+    content: '';
+    position: absolute;
+    top: 0.5rem;
+    bottom: 0.5rem;
+    left: var(--tl-x);
+    width: 2px;
+    background: var(--color-line);
+    transform: translateX(-50%);
+  }
+  .tl-item {
+    position: relative;
+    padding-left: calc(var(--tl-x) + 1.75rem);
+  }
+  .tl-item + .tl-item {
+    margin-top: 1.5rem;
+  }
+  .tl-dot {
+    position: absolute;
+    top: 1.5rem;
+    left: var(--tl-x);
+    width: var(--tl-dot);
+    height: var(--tl-dot);
+    border-radius: 999px;
+    background: var(--color-accent);
+    box-shadow: 0 0 0 4px var(--color-paper);
+    transform: translateX(-50%);
+  }
+  .tl-card {
+    padding: 1.25rem 1.5rem;
+  }
+
+  /* ---- variant="alternate": зигзаг на десктопе ---- */
+  @media (min-width: 768px) {
+    .tl-alternate {
+      --tl-x: 50%;
+      max-width: 64rem;
+    }
+    .tl-alternate .tl-item {
+      width: 50%;
+      padding-left: 0;
+    }
+    .tl-alternate .tl-item:nth-child(odd) {
+      padding-right: 2.5rem;
+    }
+    .tl-alternate .tl-item:nth-child(even) {
+      margin-left: 50%;
+      padding-left: 2.5rem;
+    }
+    /* Точка сидит на центральной линии, независимо от стороны карточки. */
+    .tl-alternate .tl-item:nth-child(odd) .tl-dot {
+      left: auto;
+      right: 0;
+      transform: translateX(50%);
+    }
+    .tl-alternate .tl-item:nth-child(even) .tl-dot {
+      left: 0;
+      transform: translateX(-50%);
+    }
+    /* Карточки на разных сторонах слегка «заходят» друг за друга по высоте,
+       как в классическом зигзаге, не оставляя пустых полос. */
+    .tl-alternate .tl-item + .tl-item {
+      margin-top: -1rem;
+    }
+    .tl-alternate .tl-item:nth-child(odd) .tl-card {
+      text-align: right;
+    }
+  }
+</style>

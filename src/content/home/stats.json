@@ -1,0 +1,6 @@
+[
+  { "id": "stat-years", "value": "12", "suffix": " лет", "label": "на рынке — с 2014 года" },
+  { "id": "stat-projects", "value": "1200", "suffix": "+", "label": "выполненных проектов" },
+  { "id": "stat-repeat", "value": "87", "suffix": "%", "label": "клиентов возвращаются или рекомендуют" },
+  { "id": "stat-team", "value": "24", "label": "специалиста в штате" }
+]

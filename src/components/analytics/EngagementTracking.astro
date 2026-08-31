@@ -1,0 +1,72 @@
+---
+/**
+ * EngagementTracking — passive micro-conversions (pattern from the
+ * catalogue and showcase references).
+ * Feed these to the ad platform as "quality visit" signals for bid training.
+ *
+ *   engaged_visitor — 60s on site, once per session;
+ *   deep_scroll     — 60% scroll depth, ОДИН РАЗ ЗА ВИЗИТ (флаг в
+ *                     sessionStorage), только на длинных страницах
+ *                     (scrollHeight > 1.4 viewports). Не «раз на страницу»:
+ *                     в SPA каждая навигация перевзводила бы цель, и она
+ *                     срабатывала бы по 5 раз за визит, обесценивая сигнал
+ *                     для обучения ставок (docs/ANALYTICS-PITFALLS.md №3).
+ *
+ * Include once in BaseLayout <head>, after ConversionTracking.
+ */
+---
+<script>
+  (function () {
+    if (window.__engageInit) return;
+    window.__engageInit = true;
+
+    function track(goal: string, params?: Record<string, unknown>) {
+      if (typeof window.trackConversion === 'function') window.trackConversion(goal, params);
+    }
+
+    // ── engaged_visitor: 60s, once per session ──
+    try {
+      if (!sessionStorage.getItem('app_engaged')) {
+        setTimeout(function () {
+          try {
+            if (!sessionStorage.getItem('app_engaged')) {
+              sessionStorage.setItem('app_engaged', '1');
+              track('engaged_visitor');
+            }
+          } catch (e) { /* private mode */ }
+        }, 60000);
+      }
+    } catch (e) { /* private mode */ }
+
+    // ── deep_scroll: 60% depth, ОДИН РАЗ ЗА ВИЗИТ, длинные страницы ──
+    var scrollFired = false;
+    try {
+      scrollFired = sessionStorage.getItem('app_deep_scroll') === '1';
+    } catch (e) { /* private mode */ }
+    function onScroll() {
+      if (scrollFired) return;
+      var doc = document.documentElement;
+      if (doc.scrollHeight <= window.innerHeight * 1.4) return;
+      var depth = (window.scrollY + window.innerHeight) / doc.scrollHeight;
+      if (depth >= 0.6) {
+        scrollFired = true;
+        try {
+          sessionStorage.setItem('app_deep_scroll', '1');
+        } catch (e) { /* private mode */ }
+        track('deep_scroll');
+        window.removeEventListener('scroll', onScroll);
+      }
+    }
+    function arm() {
+      // Уже отметились за этот визит — слушатель больше не нужен.
+      if (scrollFired) {
+        window.removeEventListener('scroll', onScroll);
+        return;
+      }
+      window.removeEventListener('scroll', onScroll);
+      window.addEventListener('scroll', onScroll, { passive: true });
+    }
+    arm();
+    document.addEventListener('astro:page-load', arm);
+  })();
+</script>

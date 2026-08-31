@@ -1,0 +1,150 @@
+---
+/**
+ * PromoBanner — polite bottom-corner promo card (storage cadence from the
+ * showcase reference).
+ *
+ * Behaviour:
+ *   • appears after `delay` seconds of CUMULATIVE session time (the timer
+ *     keeps counting across page navigations — sessionStorage timestamps);
+ *   • dismissal is remembered for `suppressDays` days (localStorage);
+ *   • waits politely: only shows when the tab is visible and the cookie
+ *     banner has been decided, re-checking every 4s otherwise;
+ *   • z-index sits UNDER the cookie consent banner.
+ *
+ * For rotating multi-variant promos see docs/recipes/popups-engagement.md.
+ */
+interface Props {
+  title?: string;
+  text?: string;
+  ctaLabel?: string;
+  ctaHref?: string;
+  /** Cumulative session seconds before showing. */
+  delay?: number;
+  /** Days to stay hidden after dismissal. */
+  suppressDays?: number;
+}
+const {
+  title = 'Специальное предложение',
+  text = 'Короткий текст акции — одна выгода, одно действие.',
+  ctaLabel = 'Подробнее',
+  ctaHref = '/contacts/',
+  delay = 20,
+  suppressDays = 7,
+} = Astro.props;
+---
+
+<aside
+  id="promo-banner"
+  class="promo-banner fixed bottom-4 left-4 z-30 w-[calc(100%-2rem)] max-w-sm rounded-xl border border-line bg-paper p-5 shadow-2xl"
+  aria-label={title}
+  hidden
+>
+  <button
+    id="promo-close"
+    type="button"
+    class="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full text-lg text-muted transition-colors hover:bg-surface hover:text-ink"
+    aria-label="Скрыть"
+  >
+    ×
+  </button>
+  <p class="eyebrow mb-1">{title}</p>
+  <p class="pr-6 text-sm text-muted">{text}</p>
+  <a
+    href={ctaHref}
+    class="btn btn-primary mt-4 px-5 py-2.5 text-sm"
+    data-goal="cta_click"
+    data-goal-source="promo_banner"
+  >
+    {ctaLabel}
+  </a>
+</aside>
+
+<style>
+  .promo-banner {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+  }
+  .promo-banner.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .promo-banner {
+      transition: none;
+      transform: none;
+    }
+  }
+</style>
+
+<script is:inline define:vars={{ delaySec: delay, suppressDays }}>
+  (function () {
+    if (window.__promoBannerInit) return;
+    window.__promoBannerInit = true;
+
+    var DELAY_MS = delaySec * 1000;
+    var SUPPRESS_MS = suppressDays * 24 * 60 * 60 * 1000;
+
+    function dismissedRecently() {
+      try {
+        var ts = parseInt(localStorage.getItem('app_promo_dismissed') || '0', 10);
+        return ts && Date.now() - ts < SUPPRESS_MS;
+      } catch (e) { return false; }
+    }
+
+    function cookieDecided() {
+      try {
+        if (localStorage.getItem('cookie-consent')) return true;
+      } catch (e) { /* ignore */ }
+      var banner = document.getElementById('cookie-consent');
+      return !banner || banner.classList.contains('hidden');
+    }
+
+    // Cumulative session delay (shared seed with the lead popup).
+    try {
+      if (!sessionStorage.getItem('app_lp_start')) {
+        sessionStorage.setItem('app_lp_start', String(Date.now()));
+      }
+    } catch (e) { /* private mode */ }
+    function elapsed() {
+      try {
+        var start = parseInt(sessionStorage.getItem('app_lp_start') || '0', 10);
+        return start ? Date.now() - start : 0;
+      } catch (e) { return 0; }
+    }
+
+    function show() {
+      var el = document.getElementById('promo-banner');
+      if (!el || !el.hidden) return;
+      if (dismissedRecently()) return;
+      // Politeness: visible tab + cookie banner decided, else retry in 4s.
+      if (document.hidden || !cookieDecided()) {
+        setTimeout(show, 4000);
+        return;
+      }
+      el.hidden = false;
+      // Double-rAF so the transition actually runs after unhide.
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { el.classList.add('visible'); });
+      });
+    }
+
+    document.addEventListener('click', function (e) {
+      var t = e.target;
+      if (t && t.closest && t.closest('#promo-close')) {
+        var el = document.getElementById('promo-banner');
+        if (el) { el.classList.remove('visible'); el.hidden = true; }
+        try { localStorage.setItem('app_promo_dismissed', String(Date.now())); } catch (err) { /* ignore */ }
+      }
+    });
+
+    function arm() {
+      if (!document.getElementById('promo-banner')) return;
+      if (dismissedRecently()) return;
+      setTimeout(show, Math.max(0, DELAY_MS - elapsed()));
+    }
+
+    arm();
+    document.addEventListener('astro:page-load', arm);
+  })();
+</script>

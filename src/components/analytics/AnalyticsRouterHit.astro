@@ -1,0 +1,41 @@
+---
+/**
+ * Отправка просмотров страниц — ЕДИНСТВЕННОЕ место, где уходит `ym('hit')`.
+ *
+ * Счётчик инициализируется с `defer: true` (см. YandexMetrika.astro), то есть
+ * САМ не отправляет ни одного просмотра — официальная схема Яндекса для
+ * SPA-сайтов. Этот скрипт шлёт hit на каждый `astro:page-load`: событие
+ * стреляет и на первой загрузке документа, и на каждой клиентской навигации
+ * ClientRouter — ровно один hit на каждый показ страницы, без двойного счёта.
+ *
+ * Ручные хиты — это ещё и то, что разбивает записи Вебвизора на страницы:
+ * без них Метрика видела бы только страницу входа.
+ *
+ * `referer`: `document.referrer` не обновляется при History-API-навигации,
+ * поэтому для SPA-переходов подставляем URL предыдущей страницы сами.
+ *
+ * Содержимое <script> — сырой текст, не оборачивать в {`…`} (см.
+ * предупреждение в YandexMetrika.astro).
+ */
+import { METRIKA_ID } from '../../lib/analytics';
+---
+{
+  METRIKA_ID && (
+    <script is:inline define:vars={{ id: METRIKA_ID }}>
+      (function () {
+        if (window.__ymHitBound) return;
+        window.__ymHitBound = true;
+        var prevUrl = document.referrer;
+        document.addEventListener('astro:page-load', function () {
+          if (typeof window.ym === 'function') {
+            window.ym(id, 'hit', location.href, {
+              title: document.title,
+              referer: prevUrl
+            });
+          }
+          prevUrl = location.href;
+        });
+      })();
+    </script>
+  )
+}

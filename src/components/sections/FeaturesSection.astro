@@ -1,0 +1,54 @@
+---
+/**
+ * FEATURES — "why us" / services grid. Data from the `features` collection
+ * (src/content/home/features.json), so a CMS can edit it.
+ * Icons are 24×24 SVG path strings (or emoji). 0 KB JS.
+ */
+import { getCollection, getEntry } from 'astro:content';
+
+const FEATURES = (await getCollection('features')).map((e) => e.data);
+const T = (await getEntry('sections', 'main'))!.data.features;
+
+interface Props {
+  eyebrow?: string;
+  title?: string;
+  subtitle?: string;
+  /** See IntroSection's `cmsScope` prop — same override mechanism. */
+  cmsScope?: string;
+}
+const {
+  eyebrow = T.eyebrow,
+  title = T.title,
+  subtitle = T.subtitle,
+  cmsScope = 'sections::features',
+} = Astro.props;
+---
+<section id="features" class="section bg-surface">
+  <div class="container-page">
+    <div class="mx-auto max-w-2xl text-center">
+      <p class="eyebrow mb-3" data-cms={`${cmsScope}.eyebrow`}>{eyebrow}</p>
+      <h2 class="text-3xl font-bold md:text-4xl" data-cms={`${cmsScope}.title`}>{title}</h2>
+      <p class="mt-4 text-muted" data-cms={`${cmsScope}.subtitle`}>{subtitle}</p>
+    </div>
+
+    <div class="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      {
+        FEATURES.map((f) => (
+          <div class="card p-6">
+            <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-accent/10 text-accent">
+              {f.icon.startsWith('M') ? (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d={f.icon} />
+                </svg>
+              ) : (
+                <span class="text-2xl">{f.icon}</span>
+              )}
+            </div>
+            <h3 class="mt-5 text-lg font-semibold" data-cms={`features:${f.id}:title`}>{f.title}</h3>
+            <p class="mt-2 text-sm text-muted" data-cms={`features:${f.id}:description`}>{f.description}</p>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>

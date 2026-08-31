@@ -1,0 +1,299 @@
+---
+/**
+ * Tooltip — текстовая подсказка при hover/focus (адаптация starwind-ui, MIT).
+ *
+ * Использование:
+ *   <Tooltip text="Поясняющий текст">
+ *     <button type="button" class="…">?</button>
+ *   </Tooltip>
+ *
+ * Триггер — содержимое <slot>; для доступности он должен быть фокусируемым
+ * (кнопка, ссылка, элемент с tabindex) — aria-describedby вешается на первый
+ * элемент слота (иначе на обёртку).
+ *
+ * Поведение:
+ *   • показ по hover (задержка `delay`) И по focus/клику (клик покрывает тач —
+ *     никакого long-press);
+ *   • скрытие: mouseleave (с grace-таймером — можно навести на сам бабл),
+ *     blur, Escape, любой scroll, тап вне;
+ *   • на время показа бабл ПОРТАЛИРУЕТСЯ в <body>: fixed-координаты от
+ *     computePosition() честны только там (transform на предке — например,
+ *     отработавший data-reveal — делает fixed локальным);
+ *   • flip/shift у краёв вьюпорта — src/lib/positioning.ts;
+ *   • анимация только под prefers-reduced-motion: no-preference.
+ *
+ * SPA-safe: document-слушатели один раз за жизнь документа (__tooltipInit,
+ * объявлен в env.d.ts — общий дом флагов), привязка к DOM — по готовности
+ * DOM и на каждый astro:page-load, scroll/resize-слушатели открытого бабла
+ * чистятся AbortController'ом при закрытии.
+ */
+interface Props {
+  /** Текст подсказки. */
+  text: string;
+  /** Предпочтительная сторона (flip у края вьюпорта). */
+  placement?: 'top' | 'bottom' | 'left' | 'right';
+  /** Задержка показа по hover, мс. */
+  delay?: number;
+  /** Дополнительные классы обёртки-хоста. */
+  class?: string;
+}
+
+const { text, placement = 'top', delay = 300, class: className } = Astro.props;
+---
+
+<span
+  class:list={['tt-host', className]}
+  data-tt-placement={placement}
+  data-tt-delay={delay}
+>
+  <slot />
+  <span class="tt-bubble" role="tooltip" hidden>{text}</span>
+</span>
+
+<style>
+  .tt-host {
+    display: inline-block;
+  }
+
+  .tt-bubble {
+    /* Координаты вьюпортные (computePosition), бабл на время показа живёт
+       прямым потомком <body> — см. doc-комментарий. */
+    position: fixed;
+    z-index: 90; /* выше контента и дропдауна (80), ниже лайтбокса (100) */
+    width: max-content;
+    max-width: min(18rem, calc(100vw - 1rem));
+    padding: 0.375rem 0.625rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-sm);
+    background: var(--color-ink);
+    color: var(--color-paper);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+    pointer-events: auto;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .tt-bubble {
+      opacity: 0;
+      transition:
+        opacity 0.15s ease,
+        transform 0.15s ease;
+    }
+    .tt-bubble[data-tt-side='top'] {
+      transform: translateY(4px);
+    }
+    .tt-bubble[data-tt-side='bottom'] {
+      transform: translateY(-4px);
+    }
+    .tt-bubble[data-tt-side='left'] {
+      transform: translateX(4px);
+    }
+    .tt-bubble[data-tt-side='right'] {
+      transform: translateX(-4px);
+    }
+    .tt-bubble.tt-open {
+      opacity: 1;
+      transform: none;
+    }
+  }
+</style>
+
+<script>
+  import { computePosition, type Placement } from '../../lib/positioning';
+
+  const SIDES = ['top', 'bottom', 'left', 'right'];
+  const HIDE_GRACE_MS = 100; // успеть довести мышь до бабла
+  const ANIM_MS = 160; // чуть больше transition (150 мс)
+
+  interface OpenTip {
+    host: HTMLElement;
+    bubble: HTMLElement;
+    placeholder: Comment;
+    ctrl: AbortController;
+  }
+
+  let current: OpenTip | null = null;
+  let showTimer = 0;
+  let hideTimer = 0;
+  let animTimer = 0;
+  /**
+   * Отложенный «вернуть бабл на место» закрывающегося тултипа. Пока идёт
+   * exit-анимация, `current === null`, но бабл ещё портализован в <body>;
+   * голый clearTimeout при открытии следующего оставил бы его там навсегда
+   * (невидимый слой над контентом, под reduce — видимый «призрак»).
+   */
+  let pendingFinalize: (() => void) | null = null;
+  let counter = 0;
+
+  /** Добить незавершённое закрытие синхронно (перед новым открытием). */
+  function flushPending() {
+    window.clearTimeout(animTimer);
+    const fin = pendingFinalize;
+    pendingFinalize = null;
+    fin?.();
+  }
+
+  const raf: (cb: () => void) => void =
+    typeof window.requestAnimationFrame === 'function'
+      ? (cb) => window.requestAnimationFrame(() => cb())
+      : (cb) => cb();
+
+  function clearTimers() {
+    window.clearTimeout(showTimer);
+    window.clearTimeout(hideTimer);
+  }
+
+  function position(tip: OpenTip) {
+    const raw = tip.host.getAttribute('data-tt-placement') || 'top';
+    const side = (SIDES.includes(raw) ? raw : 'top') as Placement;
+    const pos = computePosition(tip.host, tip.bubble, { placement: side, offset: 8, padding: 8 });
+    tip.bubble.style.left = `${Math.round(pos.left)}px`;
+    tip.bubble.style.top = `${Math.round(pos.top)}px`;
+    tip.bubble.setAttribute('data-tt-side', pos.placement);
+  }
+
+  function openNow(host: HTMLElement) {
+    if (current?.host === host) return;
+    if (current) closeNow(true);
+    // Предыдущий бабл мог ещё доигрывать exit-анимацию — добиваем ДО поиска
+    // своего: если это тот же хост, его бабл сейчас портализован в <body> и
+    // querySelector по хосту его не найдёт.
+    flushPending();
+
+    const bubble = host.querySelector<HTMLElement>('.tt-bubble');
+    if (!bubble) return;
+
+    // Портал в <body> с меткой-закладкой для возврата на место.
+    const placeholder = document.createComment('tt-placeholder');
+    bubble.before(placeholder);
+    document.body.appendChild(bubble);
+    bubble.hidden = false;
+
+    const ctrl = new AbortController();
+    const tip: OpenTip = { host, bubble, placeholder, ctrl };
+    current = tip;
+
+    position(tip);
+    raf(() => {
+      if (current !== tip) return;
+      position(tip); // второй замер — уже с финальными размерами бабла
+      bubble.classList.add('tt-open');
+    });
+
+    // Hoverable content: бабл не закрывается, пока мышь на нём.
+    bubble.addEventListener('mouseenter', () => window.clearTimeout(hideTimer), {
+      signal: ctrl.signal,
+    });
+    bubble.addEventListener('mouseleave', () => scheduleHide(), { signal: ctrl.signal });
+    window.addEventListener('resize', () => current && position(current), { signal: ctrl.signal });
+  }
+
+  function closeNow(immediate = false) {
+    if (!current) return;
+    const { bubble, placeholder, ctrl } = current;
+    current = null;
+    ctrl.abort();
+    bubble.classList.remove('tt-open');
+
+    const finalize = () => {
+      bubble.hidden = true;
+      bubble.style.removeProperty('left');
+      bubble.style.removeProperty('top');
+      placeholder.parentNode?.insertBefore(bubble, placeholder);
+      placeholder.remove();
+    };
+
+    flushPending();
+    if (immediate) {
+      finalize();
+    } else {
+      pendingFinalize = finalize;
+      animTimer = window.setTimeout(() => {
+        pendingFinalize = null;
+        finalize();
+      }, ANIM_MS);
+    }
+  }
+
+  function showNow(host: HTMLElement) {
+    clearTimers();
+    openNow(host);
+  }
+
+  function scheduleShow(host: HTMLElement) {
+    clearTimers();
+    const delay = parseInt(host.getAttribute('data-tt-delay') || '300', 10) || 0;
+    showTimer = window.setTimeout(() => openNow(host), delay);
+  }
+
+  function scheduleHide() {
+    clearTimers();
+    hideTimer = window.setTimeout(() => closeNow(), HIDE_GRACE_MS);
+  }
+
+  function hideNow(immediate = false) {
+    clearTimers();
+    closeNow(immediate);
+  }
+
+  /** Пер-страничная привязка: ARIA-связка + слушатели на хостах. Хосты после
+   *  SPA-свапа — новые узлы, guard-атрибут защищает от повторного прохода
+   *  по одному и тому же DOM. */
+  function initTooltips() {
+    document.querySelectorAll<HTMLElement>('.tt-host:not([data-tt-ready])').forEach((host) => {
+      host.setAttribute('data-tt-ready', '');
+      const bubble = host.querySelector<HTMLElement>('.tt-bubble');
+      if (!bubble) return;
+
+      if (!bubble.id) bubble.id = `tt-${++counter}`;
+      const describeTarget =
+        (Array.from(host.children).find((child) => child !== bubble) as HTMLElement | undefined) ??
+        host;
+      describeTarget.setAttribute('aria-describedby', bubble.id);
+
+      host.addEventListener('mouseenter', () => scheduleShow(host));
+      host.addEventListener('mouseleave', () => scheduleHide());
+      host.addEventListener('focusin', () => showNow(host));
+      host.addEventListener('focusout', () => hideNow());
+      // Тач: показ по клику/тапу (focusin ловит только фокусируемые триггеры).
+      host.addEventListener('click', () => showNow(host));
+    });
+  }
+
+  if (!window.__tooltipInit) {
+    window.__tooltipInit = true;
+
+    // ЗАПУСК: как у Carousel/BeforeAfter — на первичной загрузке
+    // astro:page-load приходит лишь по window.load, стартуем по готовности
+    // DOM; page-load остаётся для SPA-переходов. Повтор безопасен: data-tt-ready.
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initTooltips, { once: true });
+    } else {
+      initTooltips();
+    }
+    document.addEventListener('astro:page-load', initTooltips);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && current) hideNow();
+    });
+
+    // Скролл где угодно — позиция бабла больше не честная, закрываемся сразу.
+    document.addEventListener('scroll', () => current && hideNow(true), {
+      capture: true,
+      passive: true,
+    });
+
+    // Тап/клик вне хоста и бабла (важно для тача — там нет mouseleave).
+    document.addEventListener('click', (e) => {
+      if (!current) return;
+      const target = e.target as Node | null;
+      if (target && !current.host.contains(target) && !current.bubble.contains(target)) {
+        hideNow();
+      }
+    });
+
+    // Бабл не должен пережить SPA-навигацию портализованным в <body>.
+    document.addEventListener('astro:before-swap', () => hideNow(true));
+  }
+</script>

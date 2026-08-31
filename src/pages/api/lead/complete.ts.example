@@ -1,0 +1,153 @@
+/**
+ * ============================================================================
+ *  POST /api/lead/complete — полная заявка лид-пайплайна v2 (МОДУЛЬ ВЫКЛЮЧЕН).
+ * ----------------------------------------------------------------------------
+ *  Файл лежит с суффиксом `.example`, чтобы static-сборка БЕЗ адаптера
+ *  оставалась зелёной (активный `prerender = false` роут её валит).
+ *
+ *  АКТИВАЦИЯ:
+ *    1. `npm i` (адаптер @astrojs/node уже в dependencies).
+ *    2. astro.config.mjs: раскомментировать node-адаптер
+ *       (`adapter: node({ mode: 'standalone' })`) — hybrid-режим.
+ *    3. Убрать `.example` из имён ОБОИХ файлов (draft.ts + complete.ts).
+ *    4. Заполнить LEAD_* в .env (см. .env.example).
+ *  Подробно — docs/recipes/lead-pipeline.md.
+ * ----------------------------------------------------------------------------
+ *  Логика: полная заявка — шаг 2 многошаговой формы («Отправить») или
+ *  одношаговый попап. JSON или multipart/form-data (если есть файлы).
+ *
+ *  Merge с черновиком шага 1 (complete побеждает), снятие с таймера,
+ *  сохранение вложений, журнал и fan-out ботам (stage=complete,
+ *  fire-and-forget — ответ клиенту не ждёт мессенджеры).
+ * ============================================================================
+ */
+import type { APIRoute } from 'astro';
+import {
+  appendJournal,
+  quarantineLead,
+  clientIp,
+  completeLead,
+  completeSchema,
+  isAllowedOrigin,
+  json,
+  looksAutomated,
+  newLeadId,
+  notifyBots,
+  rateLimited,
+  saveAttachments,
+  type AttachmentMeta,
+} from '../../../lib/lead-server/leads';
+
+export const prerender = false;
+
+export const POST: APIRoute = async ({ request, clientAddress }) => {
+  if (!isAllowedOrigin(request.headers.get('origin'))) {
+    return json(403, { ok: false, error: 'forbidden' });
+  }
+  let ip = 'unknown';
+  try {
+    ip = clientIp(request, clientAddress);
+  } catch {
+    /* noop */
+  }
+  if (rateLimited(ip)) {
+    return json(429, { ok: false, error: 'rate_limited' });
+  }
+
+  // ── Тело: JSON (без файлов) или multipart (шаг 2 с вложениями / no-JS) ──
+  let raw: Record<string, unknown> = {};
+  let files: File[] = [];
+  const contentType = request.headers.get('content-type') || '';
+  try {
+    if (contentType.includes('application/json')) {
+      const parsed = await request.json();
+      if (typeof parsed !== 'object' || parsed === null) throw new Error('bad');
+      raw = parsed as Record<string, unknown>;
+    } else {
+      const fd = await request.formData();
+      for (const [key, value] of fd.entries()) {
+        if (key === 'attachments') continue;
+        if (typeof value === 'string') raw[key] = value;
+      }
+      files = fd.getAll('attachments').filter((v): v is File => v instanceof File && v.size > 0);
+    }
+  } catch {
+    return json(400, { ok: false, error: 'bad_body' });
+  }
+
+
+  // Ловушка для ботов — см. подробный комментарий в draft.ts. Заявка не
+  // теряется: уходит в карантин и лежит там до истечения TTL.
+  // Два эшелона антибота — см. подробные комментарии в lead-server/leads.ts.
+  // Ни один НЕ отвечает отказом: заявка уходит в карантин и лежит там до
+  // истечения TTL, чтобы ошибочно пойманного человека можно было достать.
+  //   1) honeypot   — бот заполнил скрытое поле формы;
+  //   2) не браузер — POST мимо страницы, минуя форму и её ловушку.
+  const trapped = Boolean(String((raw as Record<string, unknown>).hp_token ?? '').trim());
+  const automated = looksAutomated(request);
+
+  const parsed = completeSchema.safeParse(raw);
+  if (!parsed.success) {
+    return json(422, {
+      ok: false,
+      errors: parsed.error.issues.map((i) => ({ field: i.path.join('.'), message: i.message })),
+    });
+  }
+
+  const leadId = parsed.data.lead_id ?? newLeadId();
+
+  // Вложения читаем ДО merge (Buffer из File; лимиты внутри saveAttachments).
+  let attachments: AttachmentMeta[] = [];
+  try {
+    if (files.length > 0) {
+      const buffers = await Promise.all(files.map(async (f) => Buffer.from(await f.arrayBuffer())));
+      attachments = saveAttachments(leadId, files, buffers);
+    }
+  } catch (err) {
+    // Файлы — не повод терять лид: логируем и продолжаем без них.
+    console.error('[lead/complete] attachments failed:', err);
+  }
+
+  if (trapped || automated) {
+    quarantineLead(
+      { ...parsed.data, lead_id: leadId, attachments },
+      'complete',
+      trapped ? 'honeypot' : 'not_browser',
+    );
+    return json(201, { ok: true, lead_id: leadId });
+  }
+
+  let result;
+  try {
+    result = completeLead({ ...parsed.data, lead_id: leadId, attachments });
+    appendJournal('complete', {
+      ...parsed.data,
+      lead_id: leadId,
+      attachments,
+      deduped: result === null,
+      updated: result?.updated ?? false,
+    });
+  } catch (err) {
+    console.error('[lead/complete] persist failed:', err);
+    return json(500, { ok: false, error: 'persist_failed' });
+  }
+
+  // Настоящий дубль (тот же lead_id, ничего нового) — успех без карточки.
+  if (result === null) {
+    return json(201, { ok: true, lead_id: leadId });
+  }
+
+  // Fan-out ботам — в фоне, клиент не ждёт мессенджеры. stage='updated' —
+  // лид уже уходил (авто-флаш): боты дополнят существующую карточку.
+  // queueFailures: черновик здесь уже удалён, а маркер «отправлено» записан —
+  // второй попытки взяться неоткуда. Не принявший бот получит заявку из
+  // очереди повторов, когда поднимется (флашер, раз в минуту).
+  void notifyBots(
+    { ...result.lead, stage: result.updated ? 'updated' : 'complete' },
+    { queueFailures: true },
+  ).catch((err) =>
+    console.error('[lead/complete] notify failed:', err),
+  );
+
+  return json(201, { ok: true, lead_id: leadId });
+};

@@ -1,0 +1,27 @@
+---
+/**
+ * ItemListJsonLd — ItemList structured data for catalog index / category
+ * grid pages (list of category or product cards). Port of the catalogue reference's
+ * `seo/ItemListJsonLd.astro`, routed through `JsonLd` → `serializeJsonLd`
+ * (see src/lib/json-ld.ts) instead of its raw `JSON.stringify`.
+ */
+import JsonLd from './JsonLd.astro';
+import { absoluteUrl } from '../../config/site';
+
+interface Props {
+  items: Array<{ name: string; url: string }>;
+}
+const { items } = Astro.props;
+
+const schema = {
+  '@context': 'https://schema.org',
+  '@type': 'ItemList',
+  itemListElement: items.map((item, i) => ({
+    '@type': 'ListItem',
+    position: i + 1,
+    name: item.name,
+    url: absoluteUrl(item.url),
+  })),
+};
+---
+<JsonLd schema={schema} />

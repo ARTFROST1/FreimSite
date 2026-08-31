@@ -1,0 +1,78 @@
+---
+/**
+ * ComparisonTable — responsive comparison matrix (pattern from the
+ * catalogue reference).
+ * Booleans render as ✓ / —; the `highlight` column gets an accent tint.
+ * Scrolls horizontally inside its own container on narrow screens.
+ *
+ * Usage:
+ *   <ComparisonTable
+ *     caption="Сравнение тарифов"
+ *     headers={['', 'Базовый', 'Оптимальный']}
+ *     rows={[
+ *       { label: 'Поддержка', values: [true, true] },
+ *       { label: 'Срок', values: ['5 дней', '3 дня'] },
+ *     ]}
+ *     highlight={2}
+ *   />
+ */
+interface Row {
+  label: string;
+  values: (string | boolean)[];
+}
+interface Props {
+  headers: string[];
+  rows: Row[];
+  caption?: string;
+  /** 1-based index of the column to visually highlight. */
+  highlight?: number;
+  class?: string;
+}
+const { headers, rows, caption, highlight, class: className = '' } = Astro.props;
+---
+<div class={`overflow-x-auto rounded-xl border border-line ${className}`}>
+  <table class="w-full min-w-[560px] border-collapse text-sm">
+    {caption && <caption class="sr-only">{caption}</caption>}
+    <thead>
+      <tr class="border-b border-line bg-surface">
+        {
+          headers.map((h, i) => (
+            <th
+              scope="col"
+              class:list={[
+                'px-4 py-3 text-left font-semibold',
+                i === highlight ? 'bg-accent/10 text-accent' : '',
+              ]}
+            >
+              {h}
+            </th>
+          ))
+        }
+      </tr>
+    </thead>
+    <tbody>
+      {
+        rows.map((row) => (
+          <tr class="border-b border-line last:border-b-0">
+            <th scope="row" class="px-4 py-3 text-left font-medium">
+              {row.label}
+            </th>
+            {row.values.map((v, i) => (
+              <td class:list={['px-4 py-3 text-muted', i + 1 === highlight ? 'bg-accent/5' : '']}>
+                {typeof v === 'boolean' ? (
+                  v ? (
+                    <span class="font-semibold text-success" aria-label="Да">✓</span>
+                  ) : (
+                    <span class="text-line" aria-label="Нет">—</span>
+                  )
+                ) : (
+                  v
+                )}
+              </td>
+            ))}
+          </tr>
+        ))
+      }
+    </tbody>
+  </table>
+</div>

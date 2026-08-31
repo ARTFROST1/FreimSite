@@ -1,0 +1,109 @@
+name: "🐛 Bug in a running site"
+description: "Something the template ships is broken: a component, SEO, analytics, the CMS contract"
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please redact secrets (`.env` contents, API keys, bot tokens) before pasting
+        anything.
+
+        Можно писать по-русски.
+
+  - type: input
+    id: version
+    attributes:
+      label: FreimSite commit or tag
+      placeholder: "a1b2c3d"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: node
+    attributes:
+      label: Node.js version
+      description: "The template targets Node 22 (see `.nvmrc`) — `node -v`"
+      options:
+        - "22.x"
+        - "20.x"
+        - "18.x or older"
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      description: "Where you're running `npm run dev` / `npm run build` — not a server"
+      options:
+        - macOS
+        - Linux
+        - Windows (WSL)
+        - Windows (native, no WSL)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: page
+    attributes:
+      label: Page or URL
+      description: "Which route it happens on, or where in the build/dev output"
+      placeholder: "/katalog/some-product, or `/ui-kit/`, or 'build output only, no route'"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - Build / dev server
+        - Content collections & schemas
+        - CMS contract (content.schema.json / data-cms / fd-edit.js)
+        - SEO (meta, JSON-LD, sitemap)
+        - Analytics (Yandex Metrika, goals)
+        - Lead forms & popups
+        - Images / assets
+        - A UI component (ui-kit)
+        - Deploy (frostdeploy.json, Freim Deploy)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected vs what happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add a review to src/content/home/reviews.json
+        2. npm run dev
+        3. The rating block doesn't update
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: "Build output, browser console, or `npm test` failures"
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: "I'm on a recent clone or pull of the template"
+        - label: "`npm test` passes on an unmodified clone (so I know it's my change, not the base)"
+        - label: "I redacted secrets from everything pasted above"
+          required: true

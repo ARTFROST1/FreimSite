@@ -1,0 +1,22 @@
+{
+  "main": {
+    "operator": {
+      "fullName": "Фамилия Имя Отчество",
+      "inn": "000000000000",
+      "ogrnip": "000000000000000",
+      "registrationAddress": "Регион, населённый пункт, улица, дом"
+    },
+    "responsible": {
+      "fullName": "Фамилия Имя Отчество"
+    },
+    "dates": {
+      "privacy": "1 января 2026",
+      "consent": "1 января 2026",
+      "terms": "1 января 2026"
+    },
+    "rkn": {
+      "notificationNumber": "",
+      "notificationDate": ""
+    }
+  }
+}

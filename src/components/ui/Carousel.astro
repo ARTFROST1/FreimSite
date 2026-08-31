@@ -1,0 +1,367 @@
+---
+/**
+ * Carousel — горизонтальная лента на CSS scroll-snap + ванильные кнопки и
+ * точки. НИКАКИХ библиотек: жизненный цикл адаптирован из fulldev-ui
+ * carousel.astro (MIT), но вместо Embla — нативный скролл.
+ *
+ * Слайды — дети <slot />: обёртка сама навешивает snap и ширину. На мобиле
+ * всегда видно ~1.1 слайда (подглядывание следующего — намёк «тут скроллится»),
+ * на десктопе (≥768px) — `perView` слайдов.
+ *
+ * БЕЗ JS компонент остаётся нативной scroll-snap лентой (как `.scroll-x` в
+ * GallerySection): контент доступен пальцем/колесом, а кнопки и точки скрыты
+ * CSS-ом до класса `is-ready`, который вешает скрипт, — мёртвых контролов
+ * посетитель без скриптов не видит.
+ *
+ * `scroll-behavior: smooth` — ТОЛЬКО под `prefers-reduced-motion:
+ * no-preference`; JS вызывает `scrollTo` без `behavior`, поэтому плавность
+ * решает CSS, и reduce-ветка бесплатная.
+ *
+ * Зацикливания нет и не планируется (`loop?: false` в типах — намеренно
+ * только false): честный скролл с краями, `disabled` на кнопках у края.
+ *
+ * Состояние публикуется наружу (для стилей/аналитики соседей):
+ *   - data-can-scroll-prev / data-can-scroll-next ("true"/"false") на корне;
+ *   - data-selected-index — индекс ближайшего к снапу слайда;
+ *   - CustomEvent 'carousel:init' и 'carousel:select' (bubbles) с
+ *     detail { index, canScrollPrev, canScrollNext, slideCount };
+ *     'carousel:select' — один раз при init и далее только при СМЕНЕ индекса
+ *     (не на каждый кадр скролла).
+ *
+ * SPA-safe: singleton-гард `window.__carouselInit` и `__carouselStore`
+ * (объявлены в env.d.ts — общий дом флагов), Map-store живых инстансов,
+ * cleanup отвалившихся узлов по `document.contains` на каждом
+ * `astro:page-load`. Регрессия-страж: __tests__/carousel-boot.test.ts.
+ *
+ * Usage:
+ *   <Carousel label="Отзывы" perView={3} dots>
+ *     {reviews.map((r) => <ReviewCard {...r} />)}
+ *   </Carousel>
+ */
+interface Props {
+  /** aria-label скроллируемой области. */
+  label?: string;
+  /** Сколько слайдов видно на десктопе (≥768px). На мобиле всегда ~1.1. */
+  perView?: 1 | 2 | 3;
+  /** Точки-индикаторы под лентой (создаёт JS — число слайдов известно только из slot-детей). */
+  dots?: boolean;
+  /** Зацикливание не поддерживается — только честный скролл (см. doc выше). */
+  loop?: false;
+  /** aria-label кнопки «назад». */
+  prevLabel?: string;
+  /** aria-label кнопки «вперёд». */
+  nextLabel?: string;
+  /** Префикс aria-label точки: «<dotLabel> N». */
+  dotLabel?: string;
+  class?: string;
+}
+const {
+  label = 'Карусель',
+  perView = 1,
+  dots = false,
+  prevLabel = 'Назад',
+  nextLabel = 'Вперёд',
+  dotLabel = 'Слайд',
+  class: className = '',
+} = Astro.props;
+---
+<div
+  class:list={['carousel', className]}
+  data-carousel
+  data-dot-label={dotLabel}
+  style={`--per-view: ${perView};`}
+>
+  <!-- tabindex=0: скроллируемый регион обязан быть достижим с клавиатуры;
+       стрелки ←/→ в фокусе листают по снапам (см. скрипт). -->
+  <div
+    class="carousel-track"
+    data-carousel-track
+    role="region"
+    aria-roledescription="карусель"
+    aria-label={label}
+    tabindex="0"
+  >
+    <slot />
+  </div>
+
+  <div class="carousel-footer">
+    {dots && <div class="carousel-dots" data-carousel-dots></div>}
+    <div class="carousel-nav">
+      <button type="button" class="carousel-btn" data-carousel-prev aria-label={prevLabel} disabled>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
+      </button>
+      <button type="button" class="carousel-btn" data-carousel-next aria-label={nextLabel} disabled>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  /**
+   * Жизненный цикл — по референсу fulldev-ui (MIT): singleton-гард,
+   * Map-store инстансов, cleanup отвалившихся узлов (document.contains),
+   * ре-инициализация на astro:page-load. Вместо Embla — нативный scroll-snap:
+   * состояние краёв считается из scroll-события с rAF-троттлингом.
+   */
+  if (!window.__carouselInit) {
+    window.__carouselInit = true;
+    window.__carouselStore ??= new Map();
+    const store = window.__carouselStore;
+
+    const initCarousel = (rootEl: Element): void => {
+      if (!(rootEl instanceof HTMLElement) || store.has(rootEl)) return;
+      const root = rootEl;
+      const track = root.querySelector<HTMLElement>('[data-carousel-track]');
+      if (!track) return;
+      const slides = Array.from(track.children) as HTMLElement[];
+      if (!slides.length) return;
+      const prevBtn = root.querySelector<HTMLButtonElement>('[data-carousel-prev]');
+      const nextBtn = root.querySelector<HTMLButtonElement>('[data-carousel-next]');
+      const dotsWrap = root.querySelector<HTMLElement>('[data-carousel-dots]');
+
+      const slideLeft = (i: number): number => slides[i]!.offsetLeft - slides[0]!.offsetLeft;
+      const maxScroll = (): number => Math.max(0, track.scrollWidth - track.clientWidth);
+      /** Индекс слайда, чей снап ближе всех к текущему scrollLeft. */
+      const currentIndex = (): number => {
+        const x = track.scrollLeft;
+        let best = 0;
+        for (let i = 1; i < slides.length; i++) {
+          if (Math.abs(slideLeft(i) - x) < Math.abs(slideLeft(best) - x)) best = i;
+        }
+        return best;
+      };
+
+      const scrollToIndex = (i: number): void => {
+        const clamped = Math.min(Math.max(i, 0), slides.length - 1);
+        // БЕЗ behavior: плавность отдана CSS `scroll-behavior`, который
+        // включён только под prefers-reduced-motion: no-preference.
+        track.scrollTo({ left: Math.min(slideLeft(clamped), maxScroll()) });
+      };
+
+      // Точки: по одной на слайд, создаются здесь — число слайдов известно
+      // только из slot-детей, серверу их не посчитать.
+      const dots: HTMLButtonElement[] = [];
+      if (dotsWrap) {
+        dotsWrap.textContent = '';
+        const dotLabel = root.dataset.dotLabel || 'Слайд';
+        slides.forEach((_, i) => {
+          const dot = document.createElement('button');
+          dot.type = 'button';
+          dot.className = 'carousel-dot';
+          dot.setAttribute('aria-label', `${dotLabel} ${i + 1}`);
+          dot.addEventListener('click', () => scrollToIndex(i));
+          dotsWrap.appendChild(dot);
+          dots.push(dot);
+        });
+      }
+
+      // carousel:select — только при смене индекса: scroll стреляет каждый
+      // кадр, а подписчикам (аналитика, счётчик «3 / 7») нужна лишь смена.
+      let lastIndex = -1;
+      const sync = (): void => {
+        const index = currentIndex();
+        // Допуск 1px: субпиксельный скролл на dpr>1 не должен «отпирать» края.
+        const canScrollPrev = track.scrollLeft > 1;
+        const canScrollNext = track.scrollLeft < maxScroll() - 1;
+        root.dataset.canScrollPrev = String(canScrollPrev);
+        root.dataset.canScrollNext = String(canScrollNext);
+        root.dataset.selectedIndex = String(index);
+        if (prevBtn) prevBtn.disabled = !canScrollPrev;
+        if (nextBtn) nextBtn.disabled = !canScrollNext;
+        for (let i = 0; i < dots.length; i++) {
+          if (i === index) dots[i]!.setAttribute('aria-current', 'true');
+          else dots[i]!.removeAttribute('aria-current');
+        }
+        if (index === lastIndex) return;
+        lastIndex = index;
+        root.dispatchEvent(
+          new CustomEvent('carousel:select', {
+            bubbles: true,
+            detail: { index, canScrollPrev, canScrollNext, slideCount: slides.length },
+          }),
+        );
+      };
+
+      // rAF-троттлинг: sync не чаще кадра, сколько бы scroll-событий ни пришло.
+      let ticking = false;
+      const onScroll = (): void => {
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(() => {
+          ticking = false;
+          sync();
+        });
+      };
+
+      const onPrev = (): void => scrollToIndex(currentIndex() - 1);
+      const onNext = (): void => scrollToIndex(currentIndex() + 1);
+      const onKeyDown = (event: KeyboardEvent): void => {
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault();
+          onPrev();
+        } else if (event.key === 'ArrowRight') {
+          event.preventDefault();
+          onNext();
+        }
+      };
+
+      prevBtn?.addEventListener('click', onPrev);
+      nextBtn?.addEventListener('click', onNext);
+      track.addEventListener('scroll', onScroll, { passive: true });
+      track.addEventListener('keydown', onKeyDown);
+      window.addEventListener('resize', onScroll);
+
+      root.classList.add('is-ready'); // показывает кнопки/точки (см. <style>)
+      sync();
+      root.dispatchEvent(
+        new CustomEvent('carousel:init', { bubbles: true, detail: { slideCount: slides.length } }),
+      );
+
+      store.set(root, {
+        cleanup: () => {
+          prevBtn?.removeEventListener('click', onPrev);
+          nextBtn?.removeEventListener('click', onNext);
+          track.removeEventListener('scroll', onScroll);
+          track.removeEventListener('keydown', onKeyDown);
+          window.removeEventListener('resize', onScroll);
+        },
+      });
+    };
+
+    const initAll = (): void => {
+      // Сначала хороним инстансы, чьи узлы уехали со свапнутой страницей —
+      // иначе Map держит отсоединённый DOM и window-слушатели навсегда.
+      for (const [root, instance] of store) {
+        if (!document.contains(root)) {
+          instance.cleanup();
+          store.delete(root);
+        }
+      }
+      document.querySelectorAll('[data-carousel]').forEach(initCarousel);
+    };
+
+    // ЗАПУСК: astro:page-load на ПЕРВИЧНОЙ загрузке диспатчится по window.load
+    // (после картинок/шрифтов) — стартуем по готовности DOM, page-load
+    // оставляем для SPA-переходов. Повторный вызов безопасен: store-гард.
+    // (Тот же фикс, что у YandexMap/StackedShowcase — см. их «ЗАПУСК».)
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initAll, { once: true });
+    } else {
+      initAll();
+    }
+    document.addEventListener('astro:page-load', initAll);
+  }
+</script>
+
+<style>
+  .carousel {
+    --carousel-gap: 1rem;
+    --per-view: 1;
+  }
+
+  .carousel-track {
+    display: flex;
+    gap: var(--carousel-gap);
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    /* Скроллбар спрятан, прокрутка остаётся (тач/колесо/клавиатура/кнопки). */
+    scrollbar-width: none;
+  }
+  .carousel-track::-webkit-scrollbar {
+    display: none;
+  }
+  .carousel-track:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 4px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Плавный доезд до снапа — только когда движение не противопоказано. */
+  @media (prefers-reduced-motion: no-preference) {
+    .carousel-track {
+      scroll-behavior: smooth;
+    }
+  }
+
+  /* Слайды — дети слота, поэтому :global (scoped-класс на них не попадает).
+     Мобайл: ~1.1 слайда во вьюпорте — следующий подглядывает из-за края. */
+  .carousel-track > :global(*) {
+    scroll-snap-align: start;
+    flex: 0 0 calc((100% - var(--carousel-gap)) / 1.1);
+    min-width: 0;
+  }
+  @media (min-width: 768px) {
+    .carousel-track > :global(*) {
+      flex-basis: calc((100% - (var(--per-view) - 1) * var(--carousel-gap)) / var(--per-view));
+    }
+  }
+
+  /* Контролы скрыты, пока JS не поднялся (без JS они бесполезны и лгут). */
+  .carousel-footer {
+    display: none;
+  }
+  .carousel.is-ready .carousel-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+
+  .carousel-nav {
+    display: flex;
+    gap: 0.5rem;
+    margin-left: auto;
+  }
+  .carousel-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 9999px;
+    border: 1px solid var(--color-line);
+    background: var(--color-paper);
+    color: var(--color-ink);
+    cursor: pointer;
+    transition:
+      border-color 0.2s,
+      color 0.2s,
+      opacity 0.2s;
+  }
+  .carousel-btn:hover:not(:disabled) {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+  .carousel-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  /* Точки создаёт JS — у них нет scoped-атрибута, стилизуем через :global
+     под scoped-родителем. */
+  .carousel-dots {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .carousel-dots :global(.carousel-dot) {
+    width: 0.5rem;
+    height: 0.5rem;
+    padding: 0;
+    border: 0;
+    border-radius: 9999px;
+    background: var(--color-line);
+    cursor: pointer;
+    transition:
+      background-color 0.2s,
+      width 0.2s;
+  }
+  .carousel-dots :global(.carousel-dot[aria-current='true']) {
+    width: 1.25rem;
+    background: var(--color-accent);
+  }
+</style>

@@ -1,0 +1,203 @@
+---
+/**
+ * Каталог — развилка подкатегорий / сетка товаров / карточка товара. Один
+ * маршрут, три вида: вся ветвящаяся логика (какая категория, какие дети,
+ * какие товары, порядок, хлебные крошки) построена в src/lib/catalog.ts —
+ * здесь только рендер по уже посчитанным Astro.props.
+ *
+ * `CatalogPageProps` — размеченное объединение (discriminated union) по
+ * `view`, поэтому поля, которых нет в других вариантах (`subcategories`,
+ * `products`, `product`), выводим один раз тут же во фронтматтере в
+ * простые локальные константы (с безопасными дефолтами) — так шаблон ниже
+ * не должен заново сужать тип объединения в JSX-выражениях.
+ */
+import { getCollection, render } from 'astro:content';
+import { getImage } from 'astro:assets';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Breadcrumbs from '../../components/seo/Breadcrumbs.astro';
+import ItemListJsonLd from '../../components/seo/ItemListJsonLd.astro';
+import ProductJsonLd from '../../components/seo/ProductJsonLd.astro';
+import CategoryFork from '../../components/catalog/CategoryFork.astro';
+import ProductCard from '../../components/catalog/ProductCard.astro';
+import ProductDetail from '../../components/catalog/ProductDetail.astro';
+import { buildCatalogPaths, type CatalogPageProps } from '../../lib/catalog';
+import type { CatalogCategory } from '../../config/schemas';
+import { asset } from '../../lib/images/registry';
+import { classifyImageSource, IMAGE_FALLBACK_URL } from '../../lib/images/resolve';
+import { resolveOgImage } from '../../lib/og-image';
+import { SITE } from '../../config/site';
+
+export async function getStaticPaths() {
+  const categories = (await getCollection('categories')).map((e) => e.data);
+  const products = await getCollection('products');
+  return buildCatalogPaths(categories, products);
+}
+
+const props = Astro.props as CatalogPageProps;
+const { view, category, crumbs } = props;
+const subcategory = props.view !== 'fork' ? props.subcategory : undefined;
+const subcategories: CatalogCategory[] = props.view === 'fork' ? props.subcategories : [];
+const products = props.view === 'grid' ? props.products : [];
+const product = props.view === 'product' ? props.product : undefined;
+
+// Пустая категория — тонкая страница без контента: рендерим с noindex и
+// выкидываем из sitemap (astro.config.mjs, EMPTY_CATEGORY_PATHS — там же
+// зеркальный скан). Наполнение категории автоматически возвращает её в
+// индекс при следующей сборке.
+const noindex = props.view === 'grid' && props.products.length === 0;
+
+/**
+ * JSON-LD `image`/`og:image` нужен настоящий адрес файла, а не ключ реестра
+ * (иначе соцсети и краулеры получают 404) — тот же рецепт, что
+ * BlogLayout.astro `resolveSocialImage` (classifyImageSource + getImage).
+ * На самой странице картинки резолвит ContentImage внутри ProductDetail —
+ * этот резолв только для structured data.
+ */
+async function resolveJsonLdImage(src: string): Promise<string> {
+  const classified = classifyImageSource(src, asset);
+  if (classified.kind === 'url') return classified.url;
+  if (classified.kind === 'svg') return classified.img.src;
+  try {
+    const optimized = await getImage({
+      src: classified.img,
+      width: Math.min(classified.img.width, 1200),
+      format: 'webp',
+    });
+    return optimized.src;
+  } catch (err) {
+    console.warn(`[catalog] не удалось подготовить JSON-LD image из ${src} — рендерю ${IMAGE_FALLBACK_URL}`, err);
+    return IMAGE_FALLBACK_URL;
+  }
+}
+
+/**
+ * Отдельный OG-кадр (JPEG): у товара — главное фото, у категории — её обложка
+ * (или обложка родителя, если своей нет). Честный расчёт размера и фолбэк —
+ * в `src/lib/og-image.ts` (генерик, тем же кадром пользуется блог).
+ */
+const og = await resolveOgImage(product ? product.data.image : (subcategory ?? category).image);
+const ogAlt = product
+  ? `${product.data.title} — ${SITE.name}`
+  : `${(subcategory ?? category).name} — ${SITE.name}`;
+
+const pagePath = `/katalog/${category.id}${subcategory ? `/${subcategory.id}` : ''}${
+  product ? `/${product.id}` : ''
+}/`;
+
+let content: Awaited<ReturnType<typeof render>>['Content'] | undefined;
+let productJsonLdImages: string[] = [];
+if (product) {
+  ({ Content: content } = await render(product));
+  const rawImages = [...new Set([product.data.image, ...product.data.slider].filter(Boolean))];
+  productJsonLdImages = await Promise.all(rawImages.map(resolveJsonLdImage));
+}
+
+const heading = product ? product.data.title : category.name;
+const description = product
+  ? product.data.shortDescription
+  : (subcategory ?? category).description;
+
+const title = `${heading} — Каталог — ${SITE.name}`;
+
+const subcategoryItems = subcategories.map((sub) => ({
+  href: `/katalog/${category.id}/${sub.id}/`,
+  title: sub.name,
+  description: sub.description,
+  image: sub.image,
+  // click-to-edit плиток развилки: name/description категории-ребёнка
+  // (см. CategoryFork.astro).
+  cms: `categories:${sub.id}`,
+}));
+
+const productHrefIn = (p: (typeof products)[number]) =>
+  `/katalog/${category.id}${subcategory ? `/${subcategory.id}` : ''}/${p.id}/`;
+---
+<BaseLayout
+  title={title}
+  description={description ?? SITE.description}
+  ogImage={og.src}
+  ogImageWidth={og.width}
+  ogImageHeight={og.height}
+  ogImageAlt={ogAlt}
+  breadcrumbs={crumbs}
+  noindex={noindex}
+>
+  {
+    view === 'fork' && (
+      <ItemListJsonLd
+        slot="head"
+        items={subcategories.map((sub) => ({ name: sub.name, url: `/katalog/${category.id}/${sub.id}/` }))}
+      />
+    )
+  }
+  {
+    view === 'grid' && (
+      <ItemListJsonLd slot="head" items={products.map((p) => ({ name: p.data.title, url: productHrefIn(p) }))} />
+    )
+  }
+  {
+    view === 'product' && product && (
+      <ProductJsonLd
+        slot="head"
+        name={product.data.title}
+        description={product.data.shortDescription}
+        image={productJsonLdImages}
+        url={pagePath}
+        price={product.data.price}
+        category={(subcategory ?? category).name}
+        brand={product.data.brands.length > 0 ? product.data.brands.join(', ') : undefined}
+      />
+    )
+  }
+
+  <main class={view === 'product' ? undefined : 'section'}>
+    {
+      view === 'product' ? (
+        <div class="container-page pt-10 md:pt-14">
+          <Breadcrumbs items={crumbs} class="mb-6" />
+        </div>
+      ) : (
+        <div class="container-page">
+          <Breadcrumbs items={crumbs} class="mb-6" />
+          {/* h1 всегда показывает имя КОРНЯ ветки (`category` — всегда root,
+              см. buildCatalogPaths в src/lib/catalog.ts), поэтому
+              data-cms ссылается на category.id, а не на текущую (sub)категорию.
+              description — поле текущей категории (subcategory ?? category). */}
+          <h1 class="text-4xl font-bold md:text-5xl" data-cms={`categories:${category.id}:name`}>{heading}</h1>
+          {description && (
+            <p class="mt-4 max-w-2xl text-muted" data-cms={`categories:${(subcategory ?? category).id}:description`}>
+              {description}
+            </p>
+          )}
+        </div>
+      )
+    }
+
+    {
+      view === 'fork' && (
+        <div class="container-page mt-10">
+          <CategoryFork items={subcategoryItems} />
+        </div>
+      )
+    }
+
+    {
+      view === 'grid' &&
+        (products.length === 0 ? (
+          <div class="container-page">
+            <p class="mt-10 text-muted">В этой категории пока нет товаров.</p>
+          </div>
+        ) : (
+          <div class="container-page mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {products.map((p) => (
+              <ProductCard product={p} href={productHrefIn(p)} />
+            ))}
+          </div>
+        ))
+    }
+
+    {view === 'product' && product && content && (
+      <ProductDetail product={product} body={content} category={category} />
+    )}
+  </main>
+</BaseLayout>

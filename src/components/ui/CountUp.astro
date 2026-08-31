@@ -1,0 +1,136 @@
+---
+/**
+ * ============================================================================
+ *  CountUp — атрибутный счётчик-анимация: 0 → N при входе блока в кадр.
+ * ----------------------------------------------------------------------------
+ *  Портировано с боевого проекта, `AboutSection.astro` (:427-478, `initAboutCounters`)
+ *  — там счётчик был инлайн-скриптом внутри секции; здесь тот же приём вынесен
+ *  в самостоятельный компонент, чтобы любая секция стартера могла воткнуть
+ *  «10+ лет», «2000+ клиентов» и т. п. одной строкой, БЕЗ правки
+ *  `BaseLayout.astro` — скрипт живёт целиком внутри этого файла, Astro
+ *  автоматически дедуплицирует его, сколько бы раз `<CountUp>` ни
+ *  использовался на странице.
+ *
+ *  МЕХАНИКА. Значение лежит в разметке как ГОТОВОЕ число (`{to}{suffix}`) —
+ *  без JS/для краулера видно сразу конечный результат, а не пустоту или "0".
+ *  Скрипт находит все `[data-count-to]` на `astro:page-load`, ставит
+ *  IntersectionObserver с `threshold: 0.4` и на первое пересечение экрана
+ *  проигрывает rAF-подсчёт (easeOutCubic, длительность — `duration`).
+ *
+ *  ВЕТКИ БЕЗ АНИМАЦИИ (сразу конечное значение, ни одного кадра):
+ *   - `prefers-reduced-motion: reduce`;
+ *   - нет `IntersectionObserver` (древний браузер) — писать «0» и ждать
+ *     скролла в этом случае хуже, чем просто показать итог.
+ *
+ *  ГАРД ОТ ПОВТОРНОЙ ИНИЦИАЛИЗАЦИИ — `el.dataset.countBound`, тот же приём,
+ *  что `btn.dataset.bound` в `FAQSection.astro`: узел размечается сразу после
+ *  постановки на наблюдение, повторный вызов `init()` для ТОГО ЖЕ узла (два
+ *  `astro:page-load` подряд без смены DOM — на практике SPA-роутер этого не
+ *  делает, но код не должен на это полагаться) не заводит второй observer.
+ *
+ *  SPA-safe: module-scope массив активных `IntersectionObserver` отключается
+ *  на `astro:before-swap` (канон стартера — `docs/recipes/animations-motion.md
+ *  §2`/§3, тот же паттерн, что `ScrollScene.astro`/`StepsSection.astro`) —
+ *  после ухода со страницы наблюдатель не держит ссылку на отсоединённый
+ *  узел. Новая инициализация — на `astro:page-load` (для СВЕЖИХ узлов
+ *  входящей страницы; уже посчитанные `data-count-bound`-узлы пропускаются
+ *  автоматически, если почему-то не были размонтированы).
+ *
+ * @example
+ *   <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+ *     <div class="text-center">
+ *       <p class="text-3xl font-bold"><CountUp to={10} suffix="+" /></p>
+ *       <p class="text-sm text-muted">лет на рынке</p>
+ *     </div>
+ *   </div>
+ * ============================================================================
+ */
+interface Props {
+  /** Конечное значение счётчика. */
+  to: number;
+  /** Текст после числа (например, `+`). */
+  suffix?: string;
+  /** Длительность подсчёта в мс. 1600 — то же значение, что на боевом проекте. */
+  duration?: number;
+  class?: string;
+  /** Остальные атрибуты (`data-cms`, `id`, `aria-*`) уходят на сам `<span>` —
+   *  так секция с CMS-полем «число» может повесить `data-cms` прямо на
+   *  счётчик, не заворачивая его в лишний элемент (см. StatsSection.astro:
+   *  при пустом `suffix` textContent === `to`, ровно одно поле). */
+  [key: string]: unknown;
+}
+
+const { to, suffix = '', duration = 1600, class: className, ...rest } = Astro.props;
+---
+
+<span
+  class={className}
+  data-count-to={to}
+  data-count-suffix={suffix}
+  data-count-duration={duration}
+  {...rest}
+>{to}{suffix}</span>
+
+<script>
+  /** Активные наблюдатели — снимаются на astro:before-swap (см. doc-comment файла). */
+  const observers: IntersectionObserver[] = [];
+
+  function teardown(): void {
+    while (observers.length) observers.pop()!.disconnect();
+  }
+  document.addEventListener('astro:before-swap', teardown);
+
+  function easeOutCubic(p: number): number {
+    return 1 - Math.pow(1 - p, 3);
+  }
+
+  function animate(el: HTMLElement, target: number, suffix: string, duration: number): void {
+    const start = performance.now();
+    function step(ts: number): void {
+      const p = Math.min(1, (ts - start) / duration);
+      el.textContent = `${Math.round(easeOutCubic(p) * target)}${suffix}`;
+      if (p < 1) requestAnimationFrame(step);
+      else el.textContent = `${target}${suffix}`; // страховка от накопленной погрешности округления
+    }
+    requestAnimationFrame(step);
+  }
+
+  function init(): void {
+    const nodes = Array.from(document.querySelectorAll<HTMLElement>('[data-count-to]'));
+    if (!nodes.length) return;
+
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+
+    nodes.forEach((el) => {
+      if (el.dataset.countBound) return; // см. doc-comment: гард от повторной привязки
+      el.dataset.countBound = '1';
+
+      const target = Number(el.dataset.countTo ?? '0');
+      const suffix = el.dataset.countSuffix ?? '';
+      const duration = Number(el.dataset.countDuration ?? '1600');
+      const setFinal = () => {
+        el.textContent = `${target}${suffix}`;
+      };
+
+      if (reduce || !('IntersectionObserver' in window)) {
+        setFinal();
+        return;
+      }
+
+      const io = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            io.disconnect();
+            animate(el, target, suffix, duration);
+          });
+        },
+        { threshold: 0.4 },
+      );
+      io.observe(el);
+      observers.push(io);
+    });
+  }
+
+  document.addEventListener('astro:page-load', init);
+</script>

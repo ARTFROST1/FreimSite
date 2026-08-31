@@ -1,0 +1,440 @@
+---
+/**
+ * Toast — глобальные всплывающие уведомления (контейнер + API).
+ * Адаптация accessible-astro-components (MIT) под конвенции стартера:
+ * токены вместо своих переменных, цветная полоска вместо набора SVG-иконок,
+ * бандл-скрипт вместо провайдера с портированием.
+ *
+ * Монтируется ОДИН раз на сайт (кандидат — BaseLayout, рядом с
+ * CookieConsent). Компонент самодостаточен: разметка + стили + скрипт.
+ *
+ * API (после монтирования, всё в try/catch — не роняет чужой код):
+ *   window.toast.show('Сохранено', { type: 'success', duration: 3000 })
+ *   window.toast.success('…') / .error('…') / .info('…')  // (message, duration?)
+ *   window.toast.dismissAll()
+ * Путь без обращения к window.toast (например, из is:inline-скриптов,
+ * которые могут выполниться раньше бандла):
+ *   document.dispatchEvent(new CustomEvent('app:toast', {
+ *     detail: { message: 'Готово', type: 'success' },
+ *   }))
+ *
+ * Доступность:
+ *   - контейнер role="log" + aria-label — скринридер объявляет новые тосты
+ *     без перехвата фокуса;
+ *   - в каждом тосте sr-only префикс типа («Успех:» / «Ошибка:» / «Инфо:») —
+ *     цвет полоски не единственный носитель смысла;
+ *   - Escape закрывает все тосты; hover/фокус ставят авто-скрытие на паузу;
+ *   - prefers-reduced-motion проверяется в JS: удаление мгновенное, без
+ *     transition (transitionend на статичном элементе не придёт — ждать его
+ *     было бы ошибкой), появление — без анимации.
+ *
+ * SPA-safe (ClientRouter): документ-уровневые слушатели и window.toast
+ * взводятся один раз под флагом `window.__toastInit` (флаг и тип ToastApi
+ * объявлены в env.d.ts — общий дом глобалов); контейнер при этом
+ * НЕ кэшируется — он живёт в <body> и умирает при каждом свапе, поэтому
+ * скрипт ищет `[data-toast-region]` заново при каждом show(). Отдельного
+ * ре-биндинга на astro:page-load не нужно; astro:before-swap лишь гасит
+ * таймеры тостов уходящей страницы.
+ *
+ * Позиция: десктоп — снизу-справа; мобила (<1024px, брейкпоинт
+ * lg:hidden у MobileStickyCTA) — снизу во всю ширину НАД островом
+ * `.mobile-cta` (его высота заложена константой 4.5rem) и над
+ * cookie-полосой — через ту же переменную `--cookie-h`, которой
+ * global.css приподнимает сам остров. z-index 60 — над cookie-полосой
+ * (z-50): уведомление о результате действия важнее любого баннера.
+ */
+interface Props {
+  /** aria-label контейнера уведомлений. */
+  ariaLabel?: string;
+  /** aria-label кнопки закрытия тоста. */
+  closeLabel?: string;
+  /** sr-only префиксы типа тоста (цвет полоски — не единственный носитель смысла). */
+  successLabel?: string;
+  errorLabel?: string;
+  infoLabel?: string;
+  /** Дефолтная длительность показа, мс (0 — не скрывать сам). */
+  duration?: number;
+  /** Максимум одновременных тостов; старые вытесняются мгновенно. */
+  maxToasts?: number;
+  /** Дополнительные классы контейнера. */
+  class?: string;
+}
+const {
+  ariaLabel = 'Уведомления',
+  closeLabel = 'Закрыть уведомление',
+  successLabel = 'Успех:',
+  errorLabel = 'Ошибка:',
+  infoLabel = 'Инфо:',
+  duration = 5000,
+  maxToasts = 3,
+  class: className,
+} = Astro.props;
+---
+
+<div
+  class:list={['toast-region', className]}
+  role="log"
+  aria-label={ariaLabel}
+  data-toast-region
+  data-duration={duration}
+  data-max-toasts={maxToasts}
+  data-label-success={successLabel}
+  data-label-error={errorLabel}
+  data-label-info={infoLabel}
+>
+  <!-- Инертный образец тоста: скрипт клонирует его на каждый show().
+       Разметка живёт здесь (а не в строке JS), чтобы scoped-стили и
+       aria-label из пропа попадали в каждый клон бесплатно. -->
+  <template data-toast-template>
+    <div class="toast" data-toast-item data-type="info">
+      <span class="toast-bar" aria-hidden="true"></span>
+      <p class="toast-text">
+        <span class="sr-only" data-toast-sr></span>
+        <span data-toast-message></span>
+      </p>
+      <button type="button" class="toast-close" data-toast-dismiss aria-label={closeLabel}>
+        ×
+      </button>
+    </div>
+  </template>
+</div>
+
+<script>
+  // Типы ToastType/ToastOptions/ToastApi и флаг window.__toastInit /
+  // window.toast объявлены в src/env.d.ts — общий дом глобалов.
+
+  /** sr-only префикс — тип тоста словами, не только цветом полоски.
+   *  Боевые строки приходят из пропов через data-label-* на контейнере;
+   *  это фолбэк на случай старой разметки без атрибутов. */
+  const TYPE_PREFIX: Record<ToastType, string> = {
+    success: 'Успех:',
+    error: 'Ошибка:',
+    info: 'Инфо:',
+  };
+
+  function typePrefix(region: HTMLElement, type: ToastType): string {
+    const fromProps: Record<ToastType, string | undefined> = {
+      success: region.dataset.labelSuccess,
+      error: region.dataset.labelError,
+      info: region.dataset.labelInfo,
+    };
+    return fromProps[type] ?? TYPE_PREFIX[type];
+  }
+
+  /** Состояние авто-скрытия одного тоста (пауза по hover/фокусу). */
+  interface TimerState {
+    id: number;
+    remaining: number;
+    startedAt: number;
+    paused: boolean;
+  }
+  const timers = new Map<HTMLElement, TimerState>();
+  let counter = 0;
+
+  function warnDev(...args: unknown[]): void {
+    if (import.meta.env.DEV) console.warn('[Toast]', ...args);
+  }
+
+  /** Контейнер ищется заново при каждом обращении — переживает SPA-свапы. */
+  function getRegion(): HTMLElement | null {
+    return document.querySelector<HTMLElement>('[data-toast-region]');
+  }
+
+  function prefersReduce(): boolean {
+    try {
+      return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch {
+      return false; // среда без matchMedia (старые webview, jsdom в тестах)
+    }
+  }
+
+  function clearTimer(toast: HTMLElement): void {
+    const t = timers.get(toast);
+    if (!t) return;
+    clearTimeout(t.id);
+    timers.delete(toast);
+  }
+
+  function removeToast(toast: HTMLElement, immediate = false): void {
+    clearTimer(toast);
+    // Reduced-motion: у тоста нет transition, transitionend не придёт —
+    // удаляем сразу, не дожидаясь события, которого не будет.
+    if (immediate || prefersReduce()) {
+      toast.remove();
+      return;
+    }
+    toast.dataset.state = 'leaving';
+    let done = false;
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      toast.remove();
+    };
+    toast.addEventListener('transitionend', cleanup, { once: true });
+    setTimeout(cleanup, 300); // страховка: transition отменили/перебили
+  }
+
+  function armTimer(toast: HTMLElement, ms: number): void {
+    if (!(ms > 0)) return; // 0/NaN — тост живёт до ручного закрытия
+    timers.set(toast, {
+      id: window.setTimeout(() => removeToast(toast), ms),
+      remaining: ms,
+      startedAt: Date.now(),
+      paused: false,
+    });
+  }
+
+  function pauseTimer(toast: HTMLElement): void {
+    const t = timers.get(toast);
+    if (!t || t.paused) return;
+    clearTimeout(t.id);
+    t.remaining = Math.max(0, t.remaining - (Date.now() - t.startedAt));
+    t.paused = true;
+  }
+
+  function resumeTimer(toast: HTMLElement): void {
+    const t = timers.get(toast);
+    if (!t || !t.paused) return;
+    t.paused = false;
+    t.startedAt = Date.now();
+    // Минимум 250 мс после ухода курсора/фокуса — тост не исчезает
+    // «из-под руки», даже если остаток уже выгорел на паузе.
+    t.id = window.setTimeout(() => removeToast(toast), Math.max(t.remaining, 250));
+  }
+
+  function dismissAll(immediate = false): void {
+    try {
+      const region = getRegion();
+      if (!region) return;
+      region
+        .querySelectorAll<HTMLElement>('[data-toast-item]')
+        .forEach((toast) => removeToast(toast, immediate));
+    } catch (e) {
+      warnDev(e);
+    }
+  }
+
+  function parseCount(raw: string | undefined, fallback: number): number {
+    const n = Number.parseInt(raw ?? '', 10);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  function show(message: string, options: ToastOptions = {}): string {
+    try {
+      const region = getRegion();
+      if (!region) {
+        // Компонент не смонтирован (нет в layout) — no-op, чтобы вызовы из
+        // форм/аналитики ничего не роняли.
+        warnDev('контейнер [data-toast-region] не найден — подключите <Toast /> в layout');
+        return '';
+      }
+      const template = region.querySelector<HTMLTemplateElement>('template[data-toast-template]');
+      const toast = template?.content.firstElementChild?.cloneNode(true) as
+        | HTMLElement
+        | undefined;
+      if (!toast) {
+        warnDev('в контейнере нет template[data-toast-template]');
+        return '';
+      }
+
+      const type: ToastType =
+        options.type && options.type in TYPE_PREFIX ? options.type : 'info';
+      const id = `toast-${++counter}`;
+      toast.dataset.toastId = id;
+      toast.dataset.type = type;
+
+      const sr = toast.querySelector<HTMLElement>('[data-toast-sr]');
+      if (sr) sr.textContent = typePrefix(region, type);
+      const msg = toast.querySelector<HTMLElement>('[data-toast-message]');
+      if (msg) msg.textContent = String(message);
+
+      toast
+        .querySelector<HTMLButtonElement>('[data-toast-dismiss]')
+        ?.addEventListener('click', () => removeToast(toast), { once: true });
+
+      // Пауза авто-скрытия, пока тост под курсором или содержит фокус.
+      toast.addEventListener('mouseenter', () => pauseTimer(toast));
+      toast.addEventListener('mouseleave', () => resumeTimer(toast));
+      toast.addEventListener('focusin', () => pauseTimer(toast));
+      toast.addEventListener('focusout', (e: FocusEvent) => {
+        const next = e.relatedTarget;
+        if (next instanceof Node && toast.contains(next)) return; // фокус ещё внутри
+        resumeTimer(toast);
+      });
+
+      region.appendChild(toast);
+
+      // Появление: без анимации при reduce, иначе двойной rAF — класс
+      // состояния должен попасть в кадр ПОСЛЕ вставки, иначе transition
+      // схлопнется (тот же приём, что у CookieConsent/PromoBanner).
+      if (prefersReduce() || typeof requestAnimationFrame === 'undefined') {
+        toast.dataset.state = 'ready';
+      } else {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            toast.dataset.state = 'ready';
+          });
+        });
+      }
+
+      const duration =
+        typeof options.duration === 'number'
+          ? options.duration
+          : parseCount(region.dataset.duration, 5000);
+      armTimer(toast, duration);
+
+      // maxToasts: старые вытесняются мгновенно (leaving-очередь только
+      // копила бы «уходящие» тосты поверх лимита).
+      const max = parseCount(region.dataset.maxToasts, 3);
+      const items = region.querySelectorAll<HTMLElement>('[data-toast-item]');
+      for (let i = 0; i < items.length - max; i++) removeToast(items[i]!, true);
+
+      return id;
+    } catch (e) {
+      warnDev(e);
+      return '';
+    }
+  }
+
+  // ── Документ-уровневые синглтоны: один раз за жизнь window ──
+  if (!window.__toastInit) {
+    window.__toastInit = true;
+
+    window.toast = {
+      show,
+      success: (m, d) => show(m, { type: 'success', duration: d }),
+      error: (m, d) => show(m, { type: 'error', duration: d }),
+      info: (m, d) => show(m, { type: 'info', duration: d }),
+      dismissAll: () => dismissAll(),
+    };
+
+    // Дублирующий путь без window.toast: CustomEvent из любого скрипта.
+    document.addEventListener('app:toast', ((e: CustomEvent) => {
+      try {
+        const d = e.detail as { message?: unknown; type?: ToastType; duration?: number } | null;
+        if (d && typeof d.message === 'string' && d.message) {
+          show(d.message, { type: d.type, duration: d.duration });
+        }
+      } catch (err) {
+        warnDev(err);
+      }
+    }) as EventListener);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') dismissAll();
+    });
+
+    // Свап уносит контейнер вместе с <body> — таймеры по отсоединённым
+    // узлам чистятся здесь (правило C из docs/recipes/animations-motion.md).
+    document.addEventListener('astro:before-swap', () => {
+      timers.forEach((t) => clearTimeout(t.id));
+      timers.clear();
+    });
+  }
+
+  export {};
+</script>
+
+<style>
+  .toast-region {
+    position: fixed;
+    /* Лестница фиксированных виджетов: promo 30 → mobile-cta 40 →
+       cookie 50 → toasts 60 (результат действия важнее баннеров). */
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    /* Мобила: во всю ширину, над островом .mobile-cta (~4.5rem его роста)
+       и над cookie-полосой — тот же приём, что у самого острова в
+       global.css: bottom приподнят на var(--cookie-h). safe-area уже
+       внутри --cookie-h, когда полоса открыта, поэтому добавляем env()
+       отдельно — он схлопнется в 0 на устройствах без выреза. */
+    inset-inline: 1rem;
+    bottom: calc(4.5rem + env(safe-area-inset-bottom) + var(--cookie-h, 0px));
+    pointer-events: none; /* клики ловят сами тосты, не пустая колонка */
+  }
+  /* lg — брейкпоинт, с которого MobileStickyCTA скрыт (lg:hidden):
+     остров исчезает, тосты прижимаются к нижнему правому углу. */
+  @media (min-width: 1024px) {
+    .toast-region {
+      inset-inline: auto;
+      right: 1.5rem;
+      bottom: calc(1.5rem + var(--cookie-h, 0px));
+      width: min(24rem, calc(100vw - 3rem));
+      align-items: flex-end;
+    }
+  }
+
+  .toast {
+    pointer-events: auto;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 0.625rem;
+    width: 100%;
+    padding: 0.625rem 0.375rem 0.625rem 0.625rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    background: var(--color-paper);
+    color: var(--color-ink);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.14);
+    /* Стартовое состояние скрыто; data-state="ready" ставит скрипт. */
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .toast {
+      transition:
+        opacity 0.25s ease,
+        transform 0.25s ease;
+    }
+  }
+  .toast[data-state='ready'] {
+    opacity: 1;
+    transform: none;
+  }
+  .toast[data-state='leaving'] {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  /* Тип — цветной полоской на статусных токенах global.css. */
+  .toast-bar {
+    width: 4px;
+    align-self: stretch;
+    border-radius: 999px;
+    background: var(--color-info);
+  }
+  .toast[data-type='success'] .toast-bar {
+    background: var(--color-success);
+  }
+  .toast[data-type='error'] .toast-bar {
+    background: var(--color-danger);
+  }
+
+  .toast-text {
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.4;
+    overflow-wrap: break-word;
+  }
+
+  .toast-close {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    font-size: 1.125rem;
+    line-height: 1;
+    color: var(--color-muted);
+    cursor: pointer;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+  .toast-close:hover {
+    background: var(--color-surface);
+    color: var(--color-ink);
+  }
+</style>

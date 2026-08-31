@@ -1,0 +1,291 @@
+---
+/**
+ * ============================================================================
+ *  BeforeAfter — слайдер-сравнение «до/после». 0 зависимостей.
+ * ----------------------------------------------------------------------------
+ *  МЕХАНИКА. Две картинки лежат друг над другом (обе — через <ContentImage>,
+ *  единственную точку рендера картинок стартера). Нижний слой — «после»,
+ *  верхний — «до», обрезанный справа `clip-path: inset(0 calc(100% - X) 0 0)`,
+ *  где X — CSS-переменная `--ba-pos` на контейнере. Управление — НАТИВНЫЙ
+ *  `<input type="range" min=0 max=100>`, растянутый прозрачным поверх всей
+ *  области: мышь, тач и стрелки с клавиатуры работают бесплатно, без единого
+ *  pointer-обработчика. Видимая рукоятка-разделитель (`.ba-handle`) — чистая
+ *  косметика: `left: var(--ba-pos)`, `pointer-events: none`, все клики
+ *  проходят сквозь неё в range.
+ *
+ *  JS МИНИМАЛЕН: один input-слушатель на экземпляр пишет `--ba-pos` на
+ *  контейнер и обновляет `aria-valuetext` («N %»). Значение слайдера — процент
+ *  видимой картинки «до» (0 — только «после», 100 — только «до»).
+ *
+ *  БЕЗ JS: `--ba-pos` задан инлайном из пропа `start`, рукоятка и срез стоят
+ *  на стартовой позиции, обе картинки частично видны — приемлемая деградация.
+ *
+ *  ДОСТУПНОСТЬ: у range — `aria-label` (проп, дефолт «Сравнение до и после»)
+ *  и `aria-valuetext` вида «50 %»; фокус-стиль рисуется на рукоятке через
+ *  `.ba-range:focus-visible ~ .ba-handle` — сам input прозрачный, но
+ *  фокусируемый. Анимаций нет (позиция следует за значением напрямую),
+ *  поэтому reduce-ветка не требуется (docs/recipes/animations-motion.md §9).
+ *
+ *  КАРТИНКИ — ОБЕ `loading="lazy"`: правило «один eager LCP-кандидат на
+ *  страницу» (docs/PERFORMANCE.md §8), сравнение — не hero.
+ *
+ *  SPA-safe (канон animations-motion.md §2): бандл-скрипт исполняется один
+ *  раз за жизнь документа (guard `window.__beforeAfterInit`, объявлен в
+ *  env.d.ts — общий дом флагов), привязка к DOM — на каждый
+ *  `astro:page-load`; идемпотентность повторных вызовов — `data-ready` на
+ *  контейнере (тот же приём, что `data-count-bound` в CountUp.astro).
+ *  Ранний старт по готовности DOM — как в StackedShowcase/YandexMap
+ *  («ЗАПУСК»): на первичной загрузке `astro:page-load` приходит только по
+ *  `window.load`, ждать его — значит отдать посетителю мёртвый слайдер на
+ *  медленной сети. Мульти-инстанс поддержан: `querySelectorAll` по всем
+ *  `[data-before-after]`.
+ *
+ * @example
+ *   <BeforeAfter
+ *     before={oldPhoto}
+ *     after={newPhoto}
+ *     beforeAlt="Кухня до ремонта"
+ *     afterAlt="Кухня после ремонта"
+ *   />
+ * ============================================================================
+ */
+import ContentImage from './ContentImage.astro';
+import type { ImageSource } from '../../lib/images/resolve';
+
+interface Props {
+  /** Картинка «до» — верхний, обрезаемый слой. Формат — как у ContentImage. */
+  before: ImageSource;
+  /** Картинка «после» — нижний слой, виден справа от рукоятки. */
+  after: ImageSource;
+  /** alt картинки «до» — обязателен. */
+  beforeAlt: string;
+  /** alt картинки «после» — обязателен. */
+  afterAlt: string;
+  beforeLabel?: string;
+  afterLabel?: string;
+  /** Стартовая позиция рукоятки, % видимой картинки «до» (0–100). */
+  start?: number;
+  /** CSS aspect-ratio контейнера, например '16/9'. */
+  ratio?: string;
+  /** aria-label ползунка сравнения. */
+  ariaLabel?: string;
+  /** Кандидаты srcset для обеих картинок (см. ContentImage). */
+  widths?: number[];
+  sizes?: string;
+  class?: string;
+}
+
+const {
+  before,
+  after,
+  beforeAlt,
+  afterAlt,
+  beforeLabel = 'До',
+  afterLabel = 'После',
+  start = 50,
+  ratio = '4/3',
+  ariaLabel = 'Сравнение до и после',
+  widths = [480, 800, 1200],
+  sizes = '100vw',
+  class: className,
+} = Astro.props;
+
+// Кривой проп (NaN, вне 0–100) не должен ломать вёрстку рукоятки.
+const startPct = Math.min(100, Math.max(0, Math.round(Number.isFinite(start) ? start : 50)));
+---
+
+<div
+  class:list={['ba-root', className]}
+  data-before-after
+  style={`--ba-pos: ${startPct}%; aspect-ratio: ${ratio};`}
+>
+  <!-- Нижний слой: «после» (полностью). -->
+  <div class="ba-layer">
+    <ContentImage
+      src={after}
+      alt={afterAlt}
+      widths={widths}
+      sizes={sizes}
+      loading="lazy"
+      class="h-full w-full object-cover"
+    />
+  </div>
+
+  <!-- Верхний слой: «до», срез справа по --ba-pos. -->
+  <div class="ba-layer ba-before">
+    <ContentImage
+      src={before}
+      alt={beforeAlt}
+      widths={widths}
+      sizes={sizes}
+      loading="lazy"
+      class="h-full w-full object-cover"
+    />
+  </div>
+
+  <span class="ba-badge ba-badge-before">{beforeLabel}</span>
+  <span class="ba-badge ba-badge-after">{afterLabel}</span>
+
+  <!-- Прозрачный, но фокусируемый range поверх всей области: мышь/тач/клавиатура
+       бесплатно. Рукоятка ниже — сосед ПОСЛЕ input, чтобы работал селектор
+       .ba-range:focus-visible ~ .ba-handle. -->
+  <input
+    class="ba-range"
+    type="range"
+    min="0"
+    max="100"
+    step="1"
+    value={startPct}
+    aria-label={ariaLabel}
+    aria-valuetext={`${startPct} %`}
+  />
+
+  <div class="ba-handle" aria-hidden="true">
+    <span class="ba-grip">
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path d="M9 6 3 12l6 6"></path>
+        <path d="m15 6 6 6-6 6"></path>
+      </svg>
+    </span>
+  </div>
+</div>
+
+<style>
+  .ba-root {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-line);
+    /* aspect-ratio и --ba-pos — инлайном из пропсов (см. разметку). */
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .ba-layer {
+    position: absolute;
+    inset: 0;
+  }
+
+  .ba-before {
+    clip-path: inset(0 calc(100% - var(--ba-pos, 50%)) 0 0);
+  }
+
+  /* Бейджи по углам. Нейтральный чёрный скрим поверх фото — тот же приём, что
+     градиенты StackedShowcase (bg-black/80): это не брендовый цвет, а
+     гарантированный контраст на любой фотографии. */
+  .ba-badge {
+    position: absolute;
+    top: 0.75rem;
+    z-index: 2;
+    pointer-events: none;
+    padding: 0.25rem 0.75rem;
+    border-radius: var(--radius-sm);
+    background: rgb(0 0 0 / 0.55);
+    color: white; /* нейтральный контраст над фото (не токен темы — как text-white в StackedShowcase) */
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .ba-badge-before {
+    left: 0.75rem;
+  }
+  .ba-badge-after {
+    right: 0.75rem;
+  }
+
+  /* Невидимый, но полностью интерактивный и фокусируемый range на всю область. */
+  .ba-range {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: ew-resize;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Рукоятка-разделитель: чистая косметика, клики проходят насквозь в range. */
+  .ba-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: var(--ba-pos, 50%);
+    z-index: 4;
+    width: 2px;
+    transform: translateX(-50%);
+    background: white; /* нейтральный контраст над фото (прецедент — StackedShowcase) */
+    box-shadow: 0 0 6px rgb(0 0 0 / 0.45);
+    pointer-events: none;
+  }
+
+  .ba-grip {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 9999px;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    border: 1px solid var(--color-line);
+    box-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
+  }
+
+  /* Видимый фокус: сам input прозрачный, кольцо рисуем на рукоятке. */
+  .ba-range:focus-visible ~ .ba-handle .ba-grip {
+    outline: 3px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+</style>
+
+<script>
+  /**
+   * Привязка input → CSS-переменная. Слушатели висят на пер-страничных DOM-
+   * узлах и умирают вместе с ними на свапе — teardown не нужен; `data-ready`
+   * страхует от двойной привязки при двух вызовах init на первичной загрузке
+   * (DOMContentLoaded + astro:page-load).
+   */
+  function initBeforeAfter(): void {
+    const roots = Array.from(document.querySelectorAll<HTMLElement>('[data-before-after]'));
+    for (const root of roots) {
+      if (root.dataset.ready) continue;
+      const range = root.querySelector<HTMLInputElement>('input[type="range"]');
+      if (!range) continue;
+      root.dataset.ready = '1';
+      range.addEventListener('input', () => {
+        root.style.setProperty('--ba-pos', `${range.value}%`);
+        range.setAttribute('aria-valuetext', `${range.value} %`);
+      });
+    }
+  }
+
+  if (!window.__beforeAfterInit) {
+    window.__beforeAfterInit = true;
+    // ЗАПУСК: как у StackedShowcase/YandexMap — на первичной загрузке
+    // astro:page-load диспатчится лишь по window.load, стартуем по готовности
+    // DOM; astro:page-load остаётся для SPA-переходов. Двойной вызов на
+    // первичной загрузке безопасен: data-ready.
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initBeforeAfter, { once: true });
+    } else {
+      initBeforeAfter();
+    }
+    document.addEventListener('astro:page-load', initBeforeAfter);
+  }
+</script>

@@ -1,0 +1,68 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import JsonLd from '../components/seo/JsonLd.astro';
+import HeroSection from '../components/sections/HeroSection.astro';
+import FeaturesSection from '../components/sections/FeaturesSection.astro';
+import IntroSection from '../components/sections/IntroSection.astro';
+import StackedShowcase from '../components/sections/StackedShowcase.astro';
+import GallerySection from '../components/sections/GallerySection.astro';
+import ReviewsSection from '../components/sections/ReviewsSection.astro';
+import PricingSection from '../components/sections/PricingSection.astro';
+import MapSection from '../components/sections/MapSection.astro';
+import LeadSection from '../components/sections/LeadSection.astro';
+import CTASection from '../components/sections/CTASection.astro';
+import FAQSection from '../components/sections/FAQSection.astro';
+import StatsSection from '../components/sections/StatsSection.astro';
+import LogosSection from '../components/sections/LogosSection.astro';
+import TeamSection from '../components/sections/TeamSection.astro';
+import TimelineSection from '../components/sections/TimelineSection.astro';
+import { SEO } from '../config/seo';
+import { webSiteSchema, localBusinessSchema } from '../lib/schema';
+
+const seo = SEO.home;
+
+// Home-page-only structured data. Organization + BreadcrumbList come from
+// BaseLayout automatically. `localBusinessSchema` deliberately never takes a
+// rating — see the doc-comment in lib/schema.ts (Google manual-action risk);
+// the on-page rating in ReviewsSection.astro stays untouched by this.
+const schemas = [webSiteSchema(), localBusinessSchema()];
+---
+<BaseLayout
+  title={seo.title}
+  description={seo.description}
+  keywords={seo.keywords}
+  ogTitle={seo.ogTitle}
+  ogDescription={seo.ogDescription}
+  ogImage={seo.ogImage}
+>
+  <JsonLd slot="head" schema={schemas} />
+
+  <main>
+    <HeroSection />
+    <FeaturesSection />
+    <StatsSection />
+    <IntroSection />
+    <LogosSection />
+    <StackedShowcase />
+    <GallerySection />
+    <TeamSection />
+    <TimelineSection />
+    <ReviewsSection />
+    <PricingSection />
+    {/*
+      Главная форма страницы — сразу после цен: человек, который только что
+      посмотрел тарифы, готов назвать телефон. `CTASection` ниже остаётся: она
+      решает другую задачу (уводит на /contacts/ тех, кто дочитал до конца),
+      и обе на лендинге не конфликтуют.
+
+      Чтобы кнопки «Оставить заявку» в шапке, герое и мобильном острове вели
+      В ЭТУ форму, а не на /contacts/, поменяйте `PRIMARY_CTA.href` в
+      src/config/nav.ts на '/#lead' — перехват клика и доводка карточки уже
+      внутри LeadSection.
+    */}
+    <LeadSection prefillEnabled cmsScope="sections::lead" />
+    <MapSection />
+    <CTASection />
+    <FAQSection />
+  </main>
+</BaseLayout>

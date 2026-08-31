@@ -1,0 +1,75 @@
+---
+/**
+ * BlogListing — единая страница списка блога для ВСЕХ её адресов:
+ * `/blog/` (src/pages/blog/index.astro, первая страница) и `/blog/page/N/`
+ * (src/pages/blog/page/[page].astro). Разметка одна, чтобы вторая страница
+ * не расходилась с первой ни визуально, ни в SEO-обвязке (заголовок, крошки,
+ * каноникал — свой для каждого адреса, его считает BaseLayout из URL).
+ *
+ * `posts` — уже нарезанный кусок под текущую страницу (Astro `paginate()`
+ * или ручной `slice` на index.astro); сортировку делает вызывающая страница.
+ * Копирайт списка (заголовок, лид, «пока нет статей») — структурный текст
+ * страницы, коллекций у него нет, поэтому data-cms здесь не печатается.
+ */
+import type { CollectionEntry } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Breadcrumbs from '../seo/Breadcrumbs.astro';
+import BlogCard from './BlogCard.astro';
+import Pagination from '../ui/Pagination.astro';
+import { SEO } from '../../config/seo';
+import { pageUrl } from '../../lib/pagination';
+
+interface Props {
+  posts: CollectionEntry<'blog'>[];
+  currentPage: number;
+  totalPages: number;
+}
+const { posts, currentPage, totalPages } = Astro.props;
+
+const BLOG_BASE = '/blog/';
+const href = (n: number) => pageUrl(n, { base: BLOG_BASE });
+
+const seo = SEO.blog;
+const isFirst = currentPage <= 1;
+// Страницы 2+ получают свой title — иначе весь список сливается для поиска в
+// один документ с одинаковыми заголовками.
+const title = isFirst ? seo.title : `Страница ${currentPage} — ${seo.title}`;
+
+const crumbs = isFirst
+  ? [{ name: 'Главная', url: '/' }, { name: 'Блог' }]
+  : [{ name: 'Главная', url: '/' }, { name: 'Блог', url: BLOG_BASE }, { name: `Страница ${currentPage}` }];
+
+const prevHref = currentPage > 1 ? href(currentPage - 1) : null;
+const nextHref = currentPage < totalPages ? href(currentPage + 1) : null;
+---
+<BaseLayout title={title} description={seo.description} ogImage={seo.ogImage} breadcrumbs={crumbs}>
+  <Fragment slot="head">
+    {prevHref && <link rel="prev" href={prevHref} />}
+    {nextHref && <link rel="next" href={nextHref} />}
+  </Fragment>
+
+  <main class="section">
+    <div class="container-page">
+      <Breadcrumbs items={crumbs} class="mb-6" />
+      <h1 class="text-4xl font-bold md:text-5xl">Блог</h1>
+      <p class="mt-4 max-w-2xl text-muted">
+        Полезные материалы для вашей аудитории. Экспертный контент приводит органический
+        трафик и подогревает доверие.
+      </p>
+
+      {
+        posts.length === 0 ? (
+          <p class="mt-10 text-muted">Пока нет опубликованных статей.</p>
+        ) : (
+          <div class="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {posts.map((post) => (
+              <BlogCard post={post} />
+            ))}
+          </div>
+        )
+      }
+
+      <Pagination class="mt-12" currentPage={currentPage} totalPages={totalPages} href={href} />
+    </div>
+  </main>
+</BaseLayout>

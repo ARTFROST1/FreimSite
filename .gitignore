@@ -1,0 +1,55 @@
+# build output
+dist/
+.output/
+
+# generated types
+.astro/
+
+# dependencies
+node_modules/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# PII лидов — никогда в git (журнал leads.jsonl, черновики, вложения)
+data/
+
+# медиа-конвейер (docs/recipes/photo-archive.md): бинарные превью/видео,
+# рабочие файлы разметки и решения человека — не контент проекта
+.staging/
+
+# environment variables
+.env
+.env.production
+.env.*.local
+
+# macOS
+.DS_Store
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Проект на npm: деплой идёт npm ci (панель Freim Deploy, GitHub Actions),
+# а pnpm по умолчанию не выполняет postbuild с IndexNow-уведомлением.
+pnpm-lock.yaml
+pnpm-workspace.yaml
+
+# SDD/скиллы: рабочие каталоги агентов, не контент проекта
+.superpowers/
+
+# Ресерч: клоны чужих стартеров для разбора — не контент проекта
+.research/
+
+# Тестовые картинки для ручного прогона загрузок и обработки изображений
+.qa-fixtures/
+.claude/*
+!.claude/skills/
+
+# Python (модуль ботов)
+__pycache__/
+*.pyc

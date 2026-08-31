@@ -1,0 +1,98 @@
+---
+/**
+ * ConversionTracking — global goal dispatcher (pattern from the catalogue reference).
+ *
+ * Provides `window.trackConversion(goal, params)` → Yandex Metrika reachGoal
+ * (no-op when the counter is disabled), plus TWO declarative layers bound
+ * once via document-level event delegation:
+ *
+ *   1. AUTO-DETECTION BY HREF — zero markup needed:
+ *        tel:                        → phone_click
+ *        wa.me / whatsapp            → messenger_click {messenger:'whatsapp'}
+ *        t.me / telegram             → messenger_click {messenger:'telegram'}
+ *        max.ru                      → messenger_click {messenger:'max'}
+ *        vk.com / instagram / youtube / rutube.ru → social_click {network}
+ *      Auto-detection takes precedence over data-goal (no double counts).
+ *
+ *   2. data-goal="goal_name" (+ data-goal-source, + JSON data-goal-params) —
+ *      for anything the href heuristics can't know (CTA buttons, cards).
+ *
+ * Include once in BaseLayout <head>. Goals registry: src/lib/analytics.ts.
+ */
+---
+<script>
+  (function () {
+    if (window.__convTrackInit) return;
+    window.__convTrackInit = true;
+
+    window.trackConversion = function (goal, params) {
+      try {
+        if (typeof window.ym === 'function' && window.__ymId) {
+          if (params && Object.keys(params).length) {
+            window.ym(window.__ymId, 'reachGoal', goal, params);
+          } else {
+            window.ym(window.__ymId, 'reachGoal', goal);
+          }
+        }
+      } catch (e) { /* analytics must never break UX */ }
+    };
+
+    type Detected = { goal: string; params?: Record<string, unknown> };
+
+    function goalFromHref(href: string | null): Detected | null {
+      if (!href) return null;
+      var h = href.toLowerCase();
+      if (h.indexOf('tel:') === 0) return { goal: 'phone_click' };
+      if (h.indexOf('wa.me') !== -1 || h.indexOf('whatsapp') !== -1)
+        return { goal: 'messenger_click', params: { messenger: 'whatsapp' } };
+      if (h.indexOf('t.me') !== -1 || h.indexOf('telegram') !== -1)
+        return { goal: 'messenger_click', params: { messenger: 'telegram' } };
+      if (h.indexOf('max.ru') !== -1)
+        return { goal: 'messenger_click', params: { messenger: 'max' } };
+      if (h.indexOf('vk.com') !== -1)
+        return { goal: 'social_click', params: { network: 'vk' } };
+      if (h.indexOf('instagram.com') !== -1)
+        return { goal: 'social_click', params: { network: 'instagram' } };
+      if (h.indexOf('youtube.com') !== -1 || h.indexOf('youtu.be') !== -1)
+        return { goal: 'social_click', params: { network: 'youtube' } };
+      if (h.indexOf('rutube.ru') !== -1)
+        return { goal: 'social_click', params: { network: 'rutube' } };
+      return null;
+    }
+
+    // Capture phase so goals fire even if a handler stops propagation later.
+    document.addEventListener('click', function (e) {
+      // e.target — EventTarget: у него нет ни tagName, ни dataset. Клик по
+      // тексту внутри ссылки приходит от элемента, поэтому сужаем до Element
+      // и дальше идём вверх по parentElement.
+      var el = e.target instanceof Element ? (e.target as HTMLElement) : null;
+      while (el && el !== document.body) {
+        // 1) Href auto-detection (takes precedence — prevents double counts).
+        if (el.tagName === 'A') {
+          var detected = goalFromHref(el.getAttribute('href'));
+          if (detected) {
+            var p: Record<string, unknown> = detected.params || {};
+            if (el.dataset.goalSource) p.source = el.dataset.goalSource;
+            window.trackConversion?.(detected.goal, p);
+            return;
+          }
+        }
+        // 2) Declarative data-goal fallback.
+        var goal = el.getAttribute('data-goal');
+        if (goal) {
+          var params: Record<string, unknown> = {};
+          if (el.dataset.goalSource) params.source = el.dataset.goalSource;
+          if (el.dataset.goalParams) {
+            try {
+              var extra = JSON.parse(el.dataset.goalParams) as Record<string, unknown>;
+              for (var k in extra) params[k] = extra[k];
+            } catch (err) { /* malformed JSON — ignore */ }
+          }
+          window.trackConversion?.(goal, params);
+          return;
+        }
+        el = el.parentElement;
+      }
+    }, true);
+  })();
+</script>

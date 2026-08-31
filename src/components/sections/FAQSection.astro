@@ -1,0 +1,179 @@
+---
+/**
+ * FAQ — vanilla-JS accordion + FAQPage JSON-LD. The structured data is
+ * emitted here so it always matches the visible Q&A (a Google requirement).
+ * Data from the `faq` collection (src/content/home/faq.json), or pass your own
+ * via `items`.
+ *
+ * "Ask a question" card (ported from a client project's FAQSection.astro, task
+ * W2-G): a sticky column next to the accordion with a button that opens
+ * `<LeadPopup>` via its manual `[data-pop]` trigger (see that component's
+ * doc-comment) — `data-pop-title={popupTitle}` gives the popup a heading
+ * specific to "asked from FAQ" instead of the popup's own default title.
+ * The card's own copy (`askTitle`/`askText`/`askLabel`) is plain component
+ * Props with defaults, NOT wired to the `sections::faq` CMS collection like
+ * `eyebrow`/`title` above — adding CMS fields for it means touching the
+ * shared `sections` schema/content (src/config/schemas.ts + content JSON),
+ * which is out of this component's scope; override via props if a page
+ * needs different copy.
+ */
+import { getCollection, getEntry } from 'astro:content';
+import type { FaqItem } from '../../config/schemas';
+import JsonLd from '../seo/JsonLd.astro';
+import { faqSchema } from '../../lib/schema';
+
+interface Props {
+  /** ⚠️ Item-level data-cms below binds to the `faq` collection by id. Passing
+   *  items from a DIFFERENT collection would annotate them with the wrong
+   *  source — write a separate component for that case. */
+  items?: FaqItem[];
+  eyebrow?: string;
+  title?: string;
+  /** See IntroSection's `cmsScope` — same override mechanism. */
+  cmsScope?: string;
+  /** Ask-card heading/body/button copy — see file doc above for why these
+   *  are plain props rather than CMS fields. */
+  askTitle?: string;
+  askText?: string;
+  askLabel?: string;
+  /** Forwarded to the popup button's `data-pop-title` — LeadPopup shows this
+   *  instead of its own default heading while opened from here. */
+  popupTitle?: string;
+}
+const FAQ = (await getCollection('faq')).map((e) => e.data);
+const T = (await getEntry('sections', 'main'))!.data.faq;
+const {
+  items = FAQ,
+  eyebrow = T.eyebrow,
+  title = T.title,
+  cmsScope = 'sections::faq',
+  askTitle = 'Не нашли свой вопрос?',
+  askText = 'Напишите нам — ответим лично и разберём именно вашу ситуацию.',
+  askLabel = 'Задать вопрос',
+  popupTitle = 'Задайте свой вопрос',
+} = Astro.props;
+---
+<section id="faq" class="section">
+  <div class="container-page max-w-5xl">
+    <div class="text-center">
+      <p class="eyebrow mb-3" data-cms={`${cmsScope}.eyebrow`}>{eyebrow}</p>
+      <h2 class="text-3xl font-bold md:text-4xl" data-cms={`${cmsScope}.title`}>{title}</h2>
+    </div>
+
+    <div class="faq-grid mt-10">
+      <div class="divide-y divide-line border-y border-line">
+        {
+          items.map((item, i) => (
+            <div class="faq-item">
+              <button
+                class="faq-toggle flex w-full items-center justify-between gap-4 py-5 text-left"
+                aria-expanded="false"
+                aria-controls={`faq-answer-${i}`}
+              >
+                <span class="text-lg font-medium" data-cms={`faq:${item.id}:question`}>{item.question}</span>
+                <svg class="faq-icon h-5 w-5 shrink-0 text-accent transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                </svg>
+              </button>
+              <div id={`faq-answer-${i}`} class="faq-answer">
+                <div>
+                  <p class="pb-5 text-muted" data-cms={`faq:${item.id}:answer`}>{item.answer}</p>
+                </div>
+              </div>
+            </div>
+          ))
+        }
+      </div>
+
+      <div class="faq-ask card p-6">
+        <h3 class="text-lg font-bold">{askTitle}</h3>
+        <p class="mt-2 text-sm text-muted">{askText}</p>
+        <button
+          type="button"
+          class="btn btn-primary mt-4 w-full"
+          data-pop
+          data-pop-source="faq"
+          data-pop-title={popupTitle}
+        >
+          {askLabel}
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<JsonLd schema={faqSchema(items)} />
+
+<style>
+  .faq-grid {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 2rem;
+    align-items: start;
+  }
+  .faq-ask {
+    /* Смещение от верха синхронизировано с реальной высотой шапки
+       (`--hdr-h`, см. Header.astro); 5rem — тот же дефолт-фолбэк, что у
+       `.steps-visual`/`.sit-preview` (StepsSection.astro/
+       SituationsSection.astro), на случай, если переменная ещё не
+       выставлена. */
+    position: sticky;
+    top: var(--hdr-h, 5rem);
+  }
+  @media (max-width: 768px) {
+    .faq-grid {
+      grid-template-columns: 1fr;
+    }
+    .faq-ask {
+      position: static;
+    }
+  }
+
+  /* Анимация раскрытия — прогрессивное улучшение поверх базового
+     `.faq-answer { grid-template-rows: 0fr → 1fr }` из global.css (то правило
+     и есть механика высоты: высота `auto` не анимируется, а `fr` — да).
+     Здесь, СТРОГО под `no-preference`: мягкая кривая вместо `ease` и
+     проявление ответа (opacity + сдвиг), чтобы текст не «выстреливал» до
+     того, как контейнер дорос. При `reduce` блок не применяется вовсе —
+     остаётся мгновенное открытие (глобальное правило в global.css к тому же
+     зажимает любые transition до 0.01ms). Без JS ответы просто не
+     открываются — так было и до анимации, это не её регрессия. */
+  @media (prefers-reduced-motion: no-preference) {
+    .faq-answer {
+      transition: grid-template-rows 0.35s cubic-bezier(0.165, 0.84, 0.44, 1);
+    }
+    .faq-answer > div > p {
+      opacity: 0;
+      transform: translateY(-0.25rem);
+      transition:
+        opacity 0.25s ease,
+        transform 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+    }
+    .faq-answer.open > div > p {
+      opacity: 1;
+      transform: none;
+      transition-delay: 0.08s;
+    }
+  }
+</style>
+
+<script is:inline>
+  (function () {
+    function initFaq() {
+      document.querySelectorAll('.faq-item').forEach(function (item) {
+        var btn = item.querySelector('.faq-toggle');
+        var answer = item.querySelector('.faq-answer');
+        var icon = item.querySelector('.faq-icon');
+        if (!btn || btn.dataset.bound) return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', function () {
+          var open = answer.classList.toggle('open');
+          btn.setAttribute('aria-expanded', String(open));
+          if (icon) icon.style.transform = open ? 'rotate(45deg)' : '';
+        });
+      });
+    }
+    document.addEventListener('DOMContentLoaded', initFaq);
+    document.addEventListener('astro:page-load', initFaq);
+  })();
+</script>
