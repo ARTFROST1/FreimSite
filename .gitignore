@@ -53,3 +53,9 @@ pnpm-workspace.yaml
 # Python (модуль ботов)
 __pycache__/
 *.pyc
+
+# Внутренние записки: отдельный приватный репозиторий
+docs/internal/
+
+# Рабочий каталог линтера дизайна
+.impeccable/
