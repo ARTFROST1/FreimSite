@@ -27,7 +27,7 @@ their own content by clicking on the page itself, no admin panel, no code.</b></
 
 ---
 
-## 🔷 What this is
+## What this is
 
 Freim Deploy is a self-hosted deploy platform — a "Vercel on your own VPS": Node 22,
 SQLite, [Caddy](https://caddyserver.com) and systemd, no Docker. FreimSite is what you
@@ -71,7 +71,7 @@ your own; the code, the schemas, and this documentation stay language-neutral.*
 
 ---
 
-## 🔷 Quick start
+## Quick start
 
 ```bash
 git clone https://github.com/ARTFROST1/FreimSite.git my-site
@@ -88,21 +88,21 @@ Full walkthrough, requirements and the command reference: **[docs/en/quick-start
 
 ---
 
-## 🔷 What you get
+## What you get
 
-|  | Feature | What it means |
-| :-: | --- | --- |
-| 🔹 | **SEO done properly** | A central SEO map, canonical URLs, OG/Twitter cards, hreflang, geo tags, JSON-LD for Organization, WebSite, LocalBusiness, BreadcrumbList, FAQPage and BlogPosting, sitemap, RSS and IndexNow — wired in, not bolted on |
-| 🔹 | **Twenty content collections, under Zod** | Every editable block — hero, features, reviews, pricing, the product catalog, the blog — is a schema first: a typo fails the build instead of shipping an empty field |
-| 🔹 | **Islands, not an app** | Astro renders the page as HTML at build time; React mounts only where something is genuinely interactive (a validated form, a lightbox) |
-| 🔹 | **Lead capture that's actually hardened** | A two-step lead form, an exit-intent popup, a promo banner, and a server-side pipeline with bot notifications and honeypot protection |
-| 🔹 | **Media & UI without the React tax** | Lightbox, carousel, tabs, modal, video embed, before/after, a map component and more — all vanilla JS, all safe across client-side navigation |
-| 🔹 | **Analytics with a goal registry** | Yandex Metrika wired in behind a single declarative `data-goal` attribute, not scattered tracking calls |
-| 🔹 | **A living component showcase** | Every section and UI primitive rendered on one page at `/ui-kit/` (excluded from search) — the reference you copy from while building |
+| Feature | What it means |
+| --- | --- |
+| **SEO done properly** | A central SEO map, canonical URLs, OG/Twitter cards, hreflang, geo tags, JSON-LD for Organization, WebSite, LocalBusiness, BreadcrumbList, FAQPage and BlogPosting, sitemap, RSS and IndexNow — wired in, not bolted on |
+| **Twenty content collections, under Zod** | Every editable block — hero, features, reviews, pricing, the product catalog, the blog — is a schema first: a typo fails the build instead of shipping an empty field |
+| **Islands, not an app** | Astro renders the page as HTML at build time; React mounts only where something is genuinely interactive (a validated form, a lightbox) |
+| **Lead capture that's actually hardened** | A two-step lead form, an exit-intent popup, a promo banner, and a server-side pipeline with bot notifications and honeypot protection |
+| **Media & UI without the React tax** | Lightbox, carousel, tabs, modal, video embed, before/after, a map component and more — all vanilla JS, all safe across client-side navigation |
+| **Analytics with a goal registry** | Yandex Metrika wired in behind a single declarative `data-goal` attribute, not scattered tracking calls |
+| **A living component showcase** | Every section and UI primitive rendered on one page at `/ui-kit/` (excluded from search) — the reference you copy from while building |
 
 ---
 
-## 🔷 CMS
+## CMS
 
 The client never opens this repository. They open their site through the **Freim Deploy
 CMS portal**, which reads a contract this template generates for it
@@ -116,7 +116,7 @@ that catches it if a refactor breaks it — is documented in full:
 
 ---
 
-## 🔷 Deploy
+## Deploy
 
 This template is built to deploy to **Freim Deploy**
 ([github.com/ARTFROST1/FreimDeploy](https://github.com/ARTFROST1/FreimDeploy)) — install it
@@ -127,7 +127,7 @@ Node process running) works too. The one file written specifically for the platf
 
 ---
 
-## 🔹 Documentation
+## Documentation
 
 Five pages get you from a fresh clone to a real, deployed site without reading a word of
 Russian:
@@ -155,7 +155,7 @@ Russian:
 
 ---
 
-## 🔹 License
+## License
 
 [MIT](LICENSE) — use it, fork it, adapt it, ship it in client work, commercially or
 otherwise. No attribution required, though a link back is always welcome.
@@ -163,7 +163,7 @@ otherwise. No attribution required, though a link back is always welcome.
 <div align="center">
 <br>
 
-**[🔷 Quick start](docs/en/quick-start.md)** · [CMS](docs/en/cms.md) · [Deploy](docs/en/deploy.md) ·
+**[Quick start](docs/en/quick-start.md)** · [CMS](docs/en/cms.md) · [Deploy](docs/en/deploy.md) ·
 [Freim Deploy](https://github.com/ARTFROST1/FreimDeploy) ·
 [Ask a question](https://github.com/ARTFROST1/FreimSite/issues/new/choose)
 
