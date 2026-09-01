@@ -14,6 +14,7 @@ their own content by clicking on the page itself, no admin panel, no code.</b></
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-22c55e?style=for-the-badge"></a>
   <img alt="Astro 7" src="https://img.shields.io/badge/Astro-7-0ea5e9?style=for-the-badge&logo=astro&logoColor=white">
   <img alt="0 KB JS by default" src="https://img.shields.io/badge/default_JS-0_KB-8b5cf6?style=for-the-badge">
+  <a href="https://github.com/ARTFROST1/FreimDeploy"><img alt="Deploys to Freim Deploy" src="https://img.shields.io/badge/deploys_to-Freim_Deploy-111316?style=for-the-badge"></a>
   <a href="https://github.com/ARTFROST1/FreimSite/generate"><img alt="Use this template" src="https://img.shields.io/badge/GitHub-Use_this_template-334155?style=for-the-badge&logo=github&logoColor=white"></a>
 </p>
 
