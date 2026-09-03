@@ -85,6 +85,41 @@ describe('buildContentSchema', () => {
     }
   });
 
+  // §5.11: подпись поля в форме портала — это `description ?? <имя поля>`,
+  // поэтому поле контракта без описания показывает клиенту сырой английский
+  // ключ (`id`, `columns`, `heading`) посреди русского интерфейса. Это прямое
+  // нарушение правила «ни одной английской строки на RU-сервере», и заметить
+  // его глазами в 174-польном контракте нельзя — только замком.
+  it('describes every field in Russian (portal renders `description ?? fieldName`)', () => {
+    const doc = buildContentSchema();
+
+    const walk = (node: Record<string, any> | undefined, path: string, bare: string[]): void => {
+      if (!node || typeof node !== 'object') return;
+      for (const [key, child] of Object.entries(node.properties ?? {})) {
+        const childPath = `${path}.${key}`;
+        const def = child as Record<string, any>;
+        if (typeof def?.description !== 'string' || def.description.trim() === '') {
+          bare.push(childPath);
+        }
+        walk(def, childPath, bare);
+      }
+      if (node.items) walk(node.items as Record<string, any>, `${path}[]`, bare);
+      for (const branch of (node.anyOf ?? node.oneOf ?? []) as Record<string, any>[]) {
+        walk(branch, path, bare);
+      }
+    };
+
+    const bare: string[] = [];
+    for (const [name, contract] of Object.entries(doc.collections)) {
+      walk(contract.itemSchema, name, bare);
+    }
+    for (const [name, entry] of Object.entries(doc.entries ?? {})) {
+      walk(entry.itemSchema, `entries/${name}`, bare);
+    }
+
+    expect(bare, 'поля без .describe() — портал покажет их английский ключ').toEqual([]);
+  });
+
   it('объявляет папку и префикс для загрузок портала', () => {
     const doc = buildContentSchema();
     // Корень src/assets: пикер портала должен видеть и фото товаров, не

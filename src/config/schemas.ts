@@ -66,8 +66,18 @@ const text = (max: number, description: string) => z.string().max(max).describe(
  * It survives reordering and renaming, so the CMS portal and the visual editor
  * can address one exact block: `features:speed:title` (the `data-cms` format —
  * see docs/CMS-BUILDING.md). Never renumber these; add new ones instead.
+ *
+ * `.describe()` здесь не косметика: подпись поля в форме портала — это
+ * `description ?? <имя поля>`, поэтому поле без описания показывает клиенту
+ * сырой английский ключ (`id`) посреди русского интерфейса. Замок —
+ * `scripts/__tests__/generate-content-schema.test.ts` («каждое поле
+ * контракта подписано по-русски»).
  */
-const id = z.string().min(1).max(MAX.slug);
+const id = z
+  .string()
+  .min(1)
+  .max(MAX.slug)
+  .describe('Служебный идентификатор карточки (латиницей; менять нельзя — потеряется связь с сайтом)');
 
 /** "Why us" / services grid. */
 export const featureSchema = z.object({
@@ -245,34 +255,36 @@ export const navigationSchema = z.object({
 
 /** Footer link labels + legal line. Hrefs stay structural in config/nav.ts. */
 export const footerSchema = z.object({
-  columns: z.object({
-    sections: z
-      .object({
-        title: text(MAX.label, 'Заголовок колонки «Разделы»'),
-        links: z
-          .object({
-            home: text(MAX.label, 'Текст ссылки «Главная» (футер)'),
-            about: text(MAX.label, 'Текст ссылки «О нас» (футер)'),
-            gallery: text(MAX.label, 'Текст ссылки «Галерея» (футер)'),
-            blog: text(MAX.label, 'Текст ссылки «Блог» (футер)'),
-            contacts: text(MAX.label, 'Текст ссылки «Контакты» (футер)'),
-          })
-          .describe('Подписи ссылок колонки «Разделы»'),
-      })
-      .describe('Колонка «Разделы»'),
-    legal: z
-      .object({
-        title: text(MAX.label, 'Заголовок колонки «Правовое»'),
-        links: z
-          .object({
-            privacy: text(MAX.label, 'Текст ссылки «Политика конфиденциальности»'),
-            consent: text(MAX.label, 'Текст ссылки «Согласие на обработку данных»'),
-            terms: text(MAX.label, 'Текст ссылки «Пользовательское соглашение»'),
-          })
-          .describe('Подписи ссылок колонки «Правовое»'),
-      })
-      .describe('Колонка «Правовое»'),
-  }),
+  columns: z
+    .object({
+      sections: z
+        .object({
+          title: text(MAX.label, 'Заголовок колонки «Разделы»'),
+          links: z
+            .object({
+              home: text(MAX.label, 'Текст ссылки «Главная» (футер)'),
+              about: text(MAX.label, 'Текст ссылки «О нас» (футер)'),
+              gallery: text(MAX.label, 'Текст ссылки «Галерея» (футер)'),
+              blog: text(MAX.label, 'Текст ссылки «Блог» (футер)'),
+              contacts: text(MAX.label, 'Текст ссылки «Контакты» (футер)'),
+            })
+            .describe('Подписи ссылок колонки «Разделы»'),
+        })
+        .describe('Колонка «Разделы»'),
+      legal: z
+        .object({
+          title: text(MAX.label, 'Заголовок колонки «Правовое»'),
+          links: z
+            .object({
+              privacy: text(MAX.label, 'Текст ссылки «Политика конфиденциальности»'),
+              consent: text(MAX.label, 'Текст ссылки «Согласие на обработку данных»'),
+              terms: text(MAX.label, 'Текст ссылки «Пользовательское соглашение»'),
+            })
+            .describe('Подписи ссылок колонки «Правовое»'),
+        })
+        .describe('Колонка «Правовое»'),
+    })
+    .describe('Колонки ссылок в подвале сайта'),
   copyrightSuffix: text(MAX.sentence, 'Текст после «© {год} {юрлицо}» в нижней строке футера'),
 });
 
@@ -357,36 +369,46 @@ export const addressSchema = z.object({
 export const pagesSchema = z.object({
   about: z
     .object({
-      heading: z.object({
-        title: text(MAX.line, 'Заголовок H1'),
-        subtitle: text(MAX.paragraph, 'Вводный абзац под заголовком'),
-      }),
-      intro: z.object({
-        eyebrow: text(MAX.label, 'Надпись над заголовком'),
-        title: text(MAX.line, 'Заголовок блока истории компании'),
-        body: text(MAX.paragraph, 'Текст истории компании'),
-      }),
-      values: z.object({
-        eyebrow: text(MAX.label, 'Надпись над заголовком'),
-        title: text(MAX.line, 'Заголовок блока ценностей'),
-        subtitle: text(MAX.sentence, 'Подзаголовок блока ценностей'),
-      }),
+      heading: z
+        .object({
+          title: text(MAX.line, 'Заголовок H1'),
+          subtitle: text(MAX.paragraph, 'Вводный абзац под заголовком'),
+        })
+        .describe('Шапка страницы — заголовок и вводный абзац'),
+      intro: z
+        .object({
+          eyebrow: text(MAX.label, 'Надпись над заголовком'),
+          title: text(MAX.line, 'Заголовок блока истории компании'),
+          body: text(MAX.paragraph, 'Текст истории компании'),
+        })
+        .describe('Блок «История компании»'),
+      values: z
+        .object({
+          eyebrow: text(MAX.label, 'Надпись над заголовком'),
+          title: text(MAX.line, 'Заголовок блока ценностей'),
+          subtitle: text(MAX.sentence, 'Подзаголовок блока ценностей'),
+        })
+        .describe('Блок «Ценности»'),
     })
     .describe('Страница «О нас»'),
   contacts: z
     .object({
-      heading: z.object({
-        title: text(MAX.line, 'Заголовок H1'),
-        subtitle: text(MAX.paragraph, 'Вводный абзац под заголовком'),
-      }),
+      heading: z
+        .object({
+          title: text(MAX.line, 'Заголовок H1'),
+          subtitle: text(MAX.paragraph, 'Вводный абзац под заголовком'),
+        })
+        .describe('Шапка страницы — заголовок и вводный абзац'),
     })
     .describe('Страница «Контакты»'),
   gallery: z
     .object({
-      heading: z.object({
-        title: text(MAX.line, 'Заголовок H1'),
-        subtitle: text(MAX.paragraph, 'Вводный абзац под заголовком'),
-      }),
+      heading: z
+        .object({
+          title: text(MAX.line, 'Заголовок H1'),
+          subtitle: text(MAX.paragraph, 'Вводный абзац под заголовком'),
+        })
+        .describe('Шапка страницы — заголовок и вводный абзац'),
     })
     .describe('Страница «Галерея»'),
 });
