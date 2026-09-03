@@ -43,7 +43,7 @@ const MAX = {
   slug: 64,
   /** Badges, eyebrows, button text, menu and link labels, phone numbers. */
   label: 120,
-  /** Headings, names, questions, prices, dates, one-line address. */
+  /** Headings, names, questions, prices, dates, one-line address, short card copy. */
   line: 200,
   /** Subtitles, card copy, list items. */
   sentence: 500,
@@ -55,6 +55,36 @@ const MAX = {
   path: 300,
   /** Bullet points inside one pricing plan. */
   planFeatures: 30,
+
+  // ── Каталог ────────────────────────────────────────────────────────────
+  // У каталога свои, более тесные, каплы: карточка товара — это плитка в
+  // сетке и сниппет в фиде, а не абзац. Значения ЗАФИКСИРОВАНЫ живыми
+  // сайтами (контракт `content.schema.json` уже стоит у клиентов, Ajv
+  // портала валидирует по нему сохранение) — имена здесь заводились, чтобы
+  // убрать литералы из схем, а не чтобы пересмотреть числа. Менять число =
+  // менять контракт: сначала миграция контента, потом правка.
+  /** Название товара — заголовок карточки и `<h1>` страницы. */
+  productTitle: 80,
+  /** Название категории — заголовок плитки каталога. */
+  categoryName: 60,
+  /** Цена свободной строкой («от 12 500 ₽») — см. доккоммент productSchema. */
+  price: 40,
+  /** Один пункт списка «Особенности» товара. */
+  feature: 80,
+  /** Название бренда/производителя. */
+  brand: 40,
+  /** SEO-`<title>` — длиннее выдача обрезает. */
+  metaTitle: 70,
+  /** SEO-`<meta description>` — длиннее выдача обрезает. */
+  metaDescription: 160,
+  /** Кадров в верхнем слайдере карточки товара. */
+  sliderImages: 20,
+  /** Кадров в нижней секции «Галерея» карточки товара. */
+  galleryImages: 30,
+  /** Пунктов в списке «Особенности» одного товара. */
+  productFeatures: 12,
+  /** Брендов у одного товара. */
+  productBrands: 8,
 } as const;
 
 /** `z.string().max(n).describe(d)` — spelled out so every field below reads
@@ -486,10 +516,13 @@ export const categorySchema = z.object({
   id: z
     .string()
     .max(MAX.slug)
-    .regex(/^[a-z0-9-]{1,64}$/)
+    // Тот же кап, что и `.max(MAX.slug)` выше — но здесь он ещё и запрещает
+    // всё, кроме латиницы/цифр/дефиса: id категории уходит в URL. Литерал 64
+    // в регэкспе разъехался бы с MAX.slug молча, поэтому собирается из него.
+    .regex(new RegExp(`^[a-z0-9-]{1,${MAX.slug}}$`))
     .describe('Идентификатор (латиница, без пробелов; менять нельзя)'),
-  name: z.string().min(1).max(60).describe('Название категории'),
-  description: z.string().max(200).optional().describe('Короткое описание для карточки'),
+  name: z.string().min(1).max(MAX.categoryName).describe('Название категории'),
+  description: z.string().max(MAX.line).optional().describe('Короткое описание для карточки'),
   image: z
     .string()
     .max(MAX.path)
@@ -508,14 +541,14 @@ export type CatalogCategory = z.infer<typeof categorySchema>;
 
 /** Товар каталога — frontmatter записи src/content/products/<slug>.mdx. */
 export const productSchema = z.object({
-  title: z.string().min(1).max(80).describe('Название товара'),
+  title: z.string().min(1).max(MAX.productTitle).describe('Название товара'),
   category: z
     .string()
     .min(1)
     .max(MAX.slug)
     .meta({ format: 'ref:categories' })
     .describe('Категория (лист дерева)'),
-  shortDescription: z.string().min(1).max(200).describe('Краткое описание для карточки'),
+  shortDescription: z.string().min(1).max(MAX.line).describe('Краткое описание для карточки'),
   // ТРИ СЛОЯ МЕДИА (урок боевого проекта, спека 2026-08-11 «Разбор фотоархива»).
   // Слой назван так же, как выглядит на странице — чтобы «галерея» не означала
   // в схеме одно, а в вёрстке другое:
@@ -532,23 +565,31 @@ export const productSchema = z.object({
   image: z.string().min(1).max(MAX.path).meta({ format: 'image' }).describe('Обложка'),
   slider: z
     .array(z.string().max(MAX.path).meta({ format: 'image' }))
-    .max(20)
+    .max(MAX.sliderImages)
     .default([])
     .describe('Слайдер: фото товара (верх карточки)'),
   gallery: z
     .array(z.string().max(MAX.path).meta({ format: 'image' }))
-    .max(30)
+    .max(MAX.galleryImages)
     .default([])
     .describe('Галерея: остальные фото (нижняя секция карточки)'),
-  price: z.string().max(40).optional().describe('Цена (свободный формат, напр. «от 12 500 ₽»)'),
-  features: z.array(z.string().max(80)).max(12).default([]).describe('Особенности (по строке)'),
-  brands: z.array(z.string().max(40)).max(8).default([]).describe('Бренды/производители'),
+  price: z.string().max(MAX.price).optional().describe('Цена (свободный формат, напр. «от 12 500 ₽»)'),
+  features: z
+    .array(z.string().max(MAX.feature))
+    .max(MAX.productFeatures)
+    .default([])
+    .describe('Особенности (по строке)'),
+  brands: z
+    .array(z.string().max(MAX.brand))
+    .max(MAX.productBrands)
+    .default([])
+    .describe('Бренды/производители'),
   isHit: z.boolean().default(false).describe('Пометить как «Хит»'),
   isNew: z.boolean().default(false).describe('Пометить как «Новинка»'),
   priority: z.number().default(0).describe('Порядок в сетке (больше — выше)'),
   draft: z.boolean().default(false).describe('Черновик (не показывать на сайте)'),
-  metaTitle: z.string().max(70).optional().describe('SEO-заголовок (title)'),
-  metaDescription: z.string().max(160).optional().describe('SEO-описание (description)'),
+  metaTitle: z.string().max(MAX.metaTitle).optional().describe('SEO-заголовок (title)'),
+  metaDescription: z.string().max(MAX.metaDescription).optional().describe('SEO-описание (description)'),
 });
 export type CatalogProduct = z.infer<typeof productSchema>;
 
