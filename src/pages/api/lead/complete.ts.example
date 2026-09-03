@@ -31,6 +31,7 @@ import {
   isAllowedOrigin,
   json,
   looksAutomated,
+  noPageProof,
   newLeadId,
   notifyBots,
   rateLimited,
@@ -85,6 +86,9 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   //   2) не браузер — POST мимо страницы, минуя форму и её ловушку.
   const trapped = Boolean(String((raw as Record<string, unknown>).hp_token ?? '').trim());
   const automated = looksAutomated(request);
+  // Третий эшелон: пустой page_url = наш lead-form.ts не выполнялся (см.
+  // noPageProof) — форму разобрали из скачанного HTML, а не заполнили.
+  const noProof = noPageProof(raw as Record<string, unknown>);
 
   const parsed = completeSchema.safeParse(raw);
   if (!parsed.success) {
@@ -108,11 +112,11 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     console.error('[lead/complete] attachments failed:', err);
   }
 
-  if (trapped || automated) {
+  if (trapped || automated || noProof) {
     quarantineLead(
       { ...parsed.data, lead_id: leadId, attachments },
       'complete',
-      trapped ? 'honeypot' : 'not_browser',
+      trapped ? 'honeypot' : automated ? 'not_browser' : 'no_page_proof',
     );
     return json(201, { ok: true, lead_id: leadId });
   }

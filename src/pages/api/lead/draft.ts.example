@@ -31,6 +31,7 @@ import {
   isAllowedOrigin,
   isAlreadySent,
   looksAutomated,
+  noPageProof,
   json,
   newLeadId,
   rateLimited,
@@ -73,6 +74,9 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   // Второй эшелон: POST мимо страницы (см. looksAutomated). Фильтра по тексту
   // нет и здесь — черновик несёт только контакт, свободных полей в нём нет.
   const automated = looksAutomated(request);
+  // Третий эшелон: пустой page_url = наш lead-form.ts не выполнялся (см.
+  // noPageProof) — форму разобрали из скачанного HTML, а не заполнили.
+  const noProof = noPageProof(raw as Record<string, unknown>);
 
   const parsed = draftSchema.safeParse(raw);
   if (!parsed.success) {
@@ -89,9 +93,9 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     return json(201, { ok: true, lead_id: lead.lead_id });
   }
 
-  if (trapped || automated) {
+  if (trapped || automated || noProof) {
     // Отвечаем как при успехе: бот не должен понять, что его отсекли.
-    quarantineLead(lead, 'draft', trapped ? 'honeypot' : 'not_browser');
+    quarantineLead(lead, 'draft', trapped ? 'honeypot' : automated ? 'not_browser' : 'no_page_proof');
     return json(201, { ok: true, lead_id: lead.lead_id });
   }
 
