@@ -96,6 +96,28 @@
     `node_modules/.vite-build` (уже сделано). Если всё же поймали 500 с
     этой ошибкой — `npx astro dev stop` и запустить заново, правкой кода
     это не чинится.
+19b. **`markdown.rehypePlugins` теряет плагины МОЛЧА — и вместе с ними
+    санитайзер тела товара.** В Astro 7 дефолтный markdown-движок — Sätteri,
+    а remark/rehype-конвейер стал опциональным процессором
+    (`unified()` из `@astrojs/markdown-remark`). Старые поля
+    `markdown.remarkPlugins/rehypePlugins/remarkRehype` работают через слой
+    совместимости (`coerceLegacyMarkdownPlugins`), и у него есть ветка,
+    которая ничего не применяет: **если `markdown.processor` задан и это не
+    `unified` — плагины просто выбрасываются**. Печатается предупреждение в
+    лог, сборка проходит ЗЕЛЁНОЙ. А `rehype-sanitize` здесь — единственное,
+    что стоит между телом `.md`-товара (его пишет клиент в textarea портала)
+    и исполняемым кодом на странице. Проверено мутацией 03.09.2026: с
+    `processor: satteri()` + старым `rehypePlugins` сборка успешна, а в
+    `dist/katalog/**` уезжают живые `<script>`, `<img onerror>`,
+    `javascript:`-ссылка и `<iframe>`. Подталкивает к этой ошибке соседний
+    deprecation-warning про `markdown.gfm`/`smartypants`: он прямо предлагает
+    `satteri({...})`. Лечение — держать плагины на ЯВНОМ процессоре
+    (`markdown: { processor: unified({ rehypePlugins: [rehypeSanitize] }) }`,
+    уже сделано) и не возвращать legacy-поля. Замок —
+    `scripts/__tests__/markdown-sanitizer.test.ts`: берёт процессор из живого
+    `astro.config.mjs` и гоняет через него payload; обе мутации выше он ловит.
+    Блог на `.mdx` изолирован (`extendMarkdownConfig: false`) и этой защитой
+    НЕ покрыт — rehype ходит по HAST и MDX/JSX не нейтрализует.
 
 ## Деплой / сервер
 
