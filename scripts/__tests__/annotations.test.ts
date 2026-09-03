@@ -31,6 +31,20 @@ const OPTIONAL_VISUAL_FIELDS: Record<string, string[]> = {
   team: ['bio', 'photo'],
   stats: ['suffix'],
   partners: ['logo'],
+  // `period` («в месяц») печатается только у тарифов, где оно заполнено —
+  // PricingSection.astro рендерит его под `{plan.period && …}`.
+  pricing: ['period'],
+};
+
+/**
+ * Поля-МАССИВЫ строк: каждый элемент аннотируется своим индексом
+ * (`pricing:<id>:features.3`) — `fd-edit.js` резолвит числовой сегмент
+ * dot-пути как ключ массива (`getByDotPath`), отдельной поддержки не нужно.
+ * Карта отдельная от VISUAL_FIELDS, потому что число атрибутов зависит от
+ * длины массива в контенте, а не от списка полей.
+ */
+const INDEXED_VISUAL_FIELDS: Record<string, string[]> = {
+  pricing: ['features'],
 };
 
 /**
@@ -76,6 +90,9 @@ const SINGLETON_FIELDS: Record<string, string[]> = {
   navigation: [
     'phone',
     'ctaLabel',
+    // Подпись кнопки звонка в нижней панели (MobileStickyCTA, есть на каждой
+    // странице через BaseLayout) — раньше была захардкожена словом «Позвонить».
+    'callLabel',
     'menu.about',
     'menu.services',
     'menu.gallery',
@@ -123,6 +140,14 @@ const ROUTE_SINGLETON_FIELDS: Record<string, Record<string, string[]>> = {
   },
   'gallery/index.html': {
     pages: ['gallery.heading.title', 'gallery.heading.subtitle'],
+  },
+  'thanks/index.html': {
+    pages: [
+      'thanks.heading.title',
+      'thanks.heading.subtitle',
+      'thanks.callLabel',
+      'thanks.backLabel',
+    ],
   },
   // Правовые документы. В CMS вынесены ТОЛЬКО факты оператора (реквизиты,
   // ФИО, даты редакций) — проза остаётся в коде, см. доккоммент legalSchema.
@@ -199,6 +224,28 @@ function categoryItems(): CategoryItem[] {
   ) as CategoryItem[];
 }
 
+/**
+ * Телефонная ссылка — единственное место, где `data-cms` правит НЕ текст, а
+ * атрибут, да ещё и через шаблон: `data-fd-attr="href"` +
+ * `data-fd-attr-template="tel:{value}"`. Связка хрупкая и молчаливая —
+ * потеряется `data-fd-attr-template`, и портал при первой же правке телефона
+ * запишет в `href` голые цифры («+7 (900) 000-00-00» вместо
+ * «tel:+79000000000»): ссылка перестанет звонить, а выглядеть будет
+ * по-прежнему. Ни один другой тест этого не видит, поэтому проверяем каждую
+ * <a>, размеченную `navigation::phone`, на КАЖДОЙ собранной странице.
+ */
+function assertPhoneLinkPattern(html: string, label: string) {
+  const anchors = html.match(/<a\b[^>]*data-cms="navigation::phone"[^>]*>/g) ?? [];
+  for (const tag of anchors) {
+    expect(tag.includes('data-fd-attr="href"'), `phone link without data-fd-attr="href" in ${label}: ${tag}`).toBe(true);
+    expect(
+      tag.includes('data-fd-attr-template="tel:{value}"'),
+      `phone link without the tel: template in ${label}: ${tag}`,
+    ).toBe(true);
+  }
+  return anchors.length;
+}
+
 /** Every data-cms value must be exactly `collection:itemId:field` — 2 colons,
  *  itemId empty for singletons. Guards against typos like a stray ':' inside
  *  a dot-path field name. */
@@ -244,6 +291,21 @@ describe('data-cms annotations (run `npm run build` first — reads dist/*.html)
     });
   }
 
+  for (const [collection, fields] of Object.entries(INDEXED_VISUAL_FIELDS)) {
+    it(`${collection}: every element of every string array annotated by index (home page)`, () => {
+      for (const item of itemsOf<{ id: string } & Record<string, unknown>>(collection)) {
+        for (const field of fields) {
+          const list = item[field];
+          expect(Array.isArray(list), `${collection}:${item.id}:${field} is not an array`).toBe(true);
+          (list as unknown[]).forEach((_, i) => {
+            const attr = `data-cms="${collection}:${item.id}:${field}.${i}"`;
+            expect(homeHtml.includes(attr), `missing ${attr} in dist/index.html`).toBe(true);
+          });
+        }
+      }
+    });
+  }
+
   for (const [collection, fields] of Object.entries(SINGLETON_FIELDS)) {
     it(`${collection}: every singleton field annotated (home page)`, () => {
       for (const field of fields) {
@@ -255,6 +317,12 @@ describe('data-cms annotations (run `npm run build` first — reads dist/*.html)
 
   it('no malformed data-cms attributes on the home page', () => {
     assertNoMalformed(homeHtml, 'dist/index.html');
+  });
+
+  it('every annotated phone link keeps the tel: attribute-template pair (home page)', () => {
+    // Шапка (десктоп + мобильное меню), футер, блок карты, мобильная панель —
+    // если счётчик упал, ссылку либо потеряли, либо перестали размечать.
+    expect(assertPhoneLinkPattern(homeHtml, 'dist/index.html')).toBeGreaterThanOrEqual(4);
   });
 
   // Ported from a client project's ReviewsSection.astro: an optional "source" line
@@ -303,6 +371,10 @@ describe('data-cms annotations (run `npm run build` first — reads dist/*.html)
 
       it('no malformed data-cms attributes', () => {
         assertNoMalformed(html, `dist/${route}`);
+      });
+
+      it('annotated phone links keep the tel: attribute-template pair', () => {
+        assertPhoneLinkPattern(html, `dist/${route}`);
       });
     });
   }

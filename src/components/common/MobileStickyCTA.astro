@@ -33,9 +33,11 @@ interface Props {
 }
 const { heroSelector = '#hero, .hero, [data-hero]' } = Astro.props;
 
-// The button label is client-editable (`navigation.ctaLabel`) — the same field
-// the header renders, so renaming the CTA in the portal changes it everywhere.
-// PRIMARY_CTA.href stays structural in config/nav.ts.
+// Both labels are client-editable: `navigation.ctaLabel` — the same field the
+// header renders, so renaming the CTA in the portal changes it everywhere;
+// `navigation.callLabel` — подпись кнопки звонка, живёт только здесь (в шапке
+// телефон показан цифрами, а не словом). PRIMARY_CTA.href и tel: остаются
+// структурными (config/nav.ts, SITE.contact.phoneRaw).
 const NAV = (await getEntry('navigation', 'main'))!.data;
 ---
 <div id="mobile-cta" class="mobile-cta lg:hidden" data-hero-selector={heroSelector}>
@@ -49,7 +51,13 @@ const NAV = (await getEntry('navigation', 'main'))!.data;
       data-fd-attr="href"
       data-fd-attr-template="tel:{value}"
     >
-      Позвонить
+      {/* Два поля на одной кнопке, и это не опечатка: сама <a> размечена
+          `navigation::phone` + data-fd-attr="href" — она патчит АТРИБУТ
+          tel:, а не текст; видимая подпись — отдельное поле на <span>
+          внутри. `closest('[data-cms]')` в fd-edit.js берёт ближайший
+          предок, поэтому клик по слову выбирает подпись, клик по полю
+          кнопки — телефон. */}
+      <span data-cms="navigation::callLabel">{NAV.callLabel}</span>
     </a>
     <a
       href={PRIMARY_CTA.href}

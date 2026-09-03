@@ -831,6 +831,11 @@
             "maxLength": 120,
             "description": "Текст кнопки «Оставить заявку» в шапке и мобильном меню"
           },
+          "callLabel": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Текст кнопки звонка в нижней панели на телефоне"
+          },
           "menu": {
             "type": "object",
             "properties": {
@@ -880,6 +885,7 @@
         "required": [
           "phone",
           "ctaLabel",
+          "callLabel",
           "menu"
         ],
         "additionalProperties": false
@@ -1194,12 +1200,56 @@
             ],
             "additionalProperties": false,
             "description": "Страница «Галерея»"
+          },
+          "thanks": {
+            "type": "object",
+            "properties": {
+              "heading": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Заголовок H1"
+                  },
+                  "subtitle": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": "Абзац под заголовком (режим работы дописывается сам)"
+                  }
+                },
+                "required": [
+                  "title",
+                  "subtitle"
+                ],
+                "additionalProperties": false,
+                "description": "Шапка страницы — заголовок и вводный абзац"
+              },
+              "callLabel": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Текст кнопки звонка"
+              },
+              "backLabel": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Текст ссылки возврата на главную (стрелка ← добавляется сама)"
+              }
+            },
+            "required": [
+              "heading",
+              "callLabel",
+              "backLabel"
+            ],
+            "additionalProperties": false,
+            "description": "Страница «Спасибо» (после отправки заявки)"
           }
         },
         "required": [
           "about",
           "contacts",
-          "gallery"
+          "gallery",
+          "thanks"
         ],
         "additionalProperties": false
       }

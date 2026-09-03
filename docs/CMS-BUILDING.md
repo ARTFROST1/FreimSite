@@ -422,13 +422,27 @@ const { eyebrow = T.eyebrow, title = T.title, body = T.body, cmsScope = 'section
 - **`SINGLETON_FIELDS`** — синглтоны, которые рендерятся **на каждой
   странице** (Header/Footer — сквозная навигация/футер/адрес — или
   hero/sections, которые проверяются на главной). Проверяются по `dist/index.html`.
+- **`OPTIONAL_VISUAL_FIELDS`** — поля, чей элемент рендерится только когда
+  поле заполнено (`team.bio`, `stats.suffix`, `pricing.period`): проверяются
+  поэлементно, пустое поле не роняет тест.
+- **`INDEXED_VISUAL_FIELDS`** — поля-МАССИВЫ строк (`pricing.features`):
+  ожидается по атрибуту на каждый элемент, с индексом в dot-пути
+  (`pricing:basic:features.3`). `fd-edit.js` резолвит числовой сегмент как
+  ключ массива — отдельной поддержки в оверлее не нужно.
 - **`ROUTE_SINGLETON_FIELDS`** — синглтоны, чьи поля видны только на
   конкретном маршруте (сейчас — `pages.about.*`/`pages.contacts.*`/
-  `pages.gallery.*`). Ключ — путь `dist/<route>/index.html`, значение — та
-  же форма, что `SINGLETON_FIELDS`, но проверяется только на этом файле.
-  **Заводя новую нехоумную страницу с CMS-полями — добавь сюда её
+  `pages.gallery.*`/`pages.thanks.*`). Ключ — путь `dist/<route>/index.html`,
+  значение — та же форма, что `SINGLETON_FIELDS`, но проверяется только на
+  этом файле. **Заводя новую нехоумную страницу с CMS-полями — добавь сюда её
   `dist/<page>/index.html` и список полей**, иначе рот-гвард её не увидит
   (по умолчанию тест смотрит только на `dist/index.html`).
+- **`assertPhoneLinkPattern`** — не карта, а проверка связки: каждая `<a>` с
+  `data-cms="navigation::phone"` обязана нести `data-fd-attr="href"` **и**
+  `data-fd-attr-template="tel:{value}"`. Потеря шаблона — самая тихая поломка
+  в этом файле: портал запишет в `href` голые цифры, ссылка перестанет
+  звонить, а выглядеть будет по-прежнему.
+- **`products: catalog pages`** — отдельный блок для `entries` (см. ниже),
+  читает id из имён файлов, а поля из фронтматтера.
 
 При добавлении нового поля/коллекции — **всегда** дополни соответствующую
 карту. Тест специально спроектирован так, чтобы рефакторинг компонента,
@@ -694,6 +708,10 @@ frontmatter); со стороны шаблона от него ничего не
 | Переиспользуемый компонент с `cmsScope` на двух страницах с разными данными | `IntroSection.astro` + `FeaturesSection.astro`, вызванные из `index.astro` (без `cmsScope`, дефолт `sections::*`) и `about.astro` (`cmsScope="pages::about.*"`) |
 | Необязательный `cmsScope`: без него атрибуты не печатаются вовсе | `PageHero.astro` |
 | Одно поле, отрисованное на четырёх поверхностях сразу | `navigation.ctaLabel` → `Header.astro` (десктоп + мобильное меню), `MobileStickyCTA.astro`, `CTASection.astro`, `BlogLayout.astro` |
+| Два поля на одной кнопке: атрибут снаружи, текст внутри | `MobileStickyCTA.astro` — на `<a>` висит `navigation::phone` + `data-fd-attr="href"` (патчит `tel:`), а видимая подпись — `<span data-cms="navigation::callLabel">` внутри. `closest('[data-cms]')` берёт ближайший предок, поэтому клик по слову выбирает подпись, клик по полю кнопки — телефон |
+| Поле-массив строк: атрибут с индексом на каждый элемент | `pricingPlanSchema.features` / `PricingSection.astro` (`pricing:<id>:features.<i>`) / `INDEXED_VISUAL_FIELDS` в `annotations.test.ts` |
+| Динамический хвост вне размеченного элемента | `thanks.astro` — `<span data-cms="pages::thanks.heading.subtitle">` + режим работы из `SITE.workingHours` СНАРУЖИ span'а; там же стрелка «←» снаружи ссылки возврата |
+| `entries`-запись с click-to-edit | `products` / `ProductCard.astro` + `ProductDetail.astro` (`products:<слаг>:title\|shortDescription\|price`) |
 | Поле, сознательно НЕ вынесенное в CMS, потому что влияет на структурированные данные/ссылки | `SITE.contact.email`, `SITE.contact.phoneRaw`, `SITE.address.country/region/locality/street/postalCode` — остаются в `src/config/site.ts`; в контент вынесен только `SITE.address.full`-аналог (коллекция `address`, поле `full`) как чисто отображаемая строка |
 | Иконка — редактируется только через форму, без `data-cms` | `featureSchema.icon` / `FeaturesSection.astro` |
 | Поле-картинка: ключ реестра, оптимизация, click-to-edit по `src` | `showcaseSlideSchema.image` / `src/content/home/showcase.json` / `StackedShowcase.astro` + `ui/ContentImage.astro` + `src/lib/images/` |
