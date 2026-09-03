@@ -393,7 +393,8 @@
           "id": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 64
+            "maxLength": 64,
+            "description": "Служебный идентификатор карточки (латиницей; менять нельзя — потеряется связь с сайтом)"
           },
           "icon": {
             "type": "string",
@@ -432,7 +433,8 @@
           "id": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 64
+            "maxLength": 64,
+            "description": "Служебный идентификатор карточки (латиницей; менять нельзя — потеряется связь с сайтом)"
           },
           "author": {
             "type": "string",
@@ -478,7 +480,8 @@
           "id": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 64
+            "maxLength": 64,
+            "description": "Служебный идентификатор карточки (латиницей; менять нельзя — потеряется связь с сайтом)"
           },
           "name": {
             "type": "string",
@@ -553,7 +556,8 @@
           "id": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 64
+            "maxLength": 64,
+            "description": "Служебный идентификатор карточки (латиницей; менять нельзя — потеряется связь с сайтом)"
           },
           "question": {
             "type": "string",
@@ -615,7 +619,8 @@
           "id": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 64
+            "maxLength": 64,
+            "description": "Служебный идентификатор карточки (латиницей; менять нельзя — потеряется связь с сайтом)"
           },
           "title": {
             "type": "string",
@@ -656,7 +661,8 @@
           "id": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 64
+            "maxLength": 64,
+            "description": "Служебный идентификатор карточки (латиницей; менять нельзя — потеряется связь с сайтом)"
           },
           "name": {
             "type": "string",
@@ -700,7 +706,8 @@
           "id": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 64
+            "maxLength": 64,
+            "description": "Служебный идентификатор карточки (латиницей; менять нельзя — потеряется связь с сайтом)"
           },
           "value": {
             "type": "string",
@@ -738,7 +745,8 @@
           "id": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 64
+            "maxLength": 64,
+            "description": "Служебный идентификатор карточки (латиницей; менять нельзя — потеряется связь с сайтом)"
           },
           "name": {
             "type": "string",
@@ -776,7 +784,8 @@
           "id": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 64
+            "maxLength": 64,
+            "description": "Служебный идентификатор карточки (латиницей; менять нельзя — потеряется связь с сайтом)"
           },
           "date": {
             "type": "string",
@@ -821,6 +830,11 @@
             "type": "string",
             "maxLength": 120,
             "description": "Текст кнопки «Оставить заявку» в шапке и мобильном меню"
+          },
+          "callLabel": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Текст кнопки звонка в нижней панели на телефоне"
           },
           "menu": {
             "type": "object",
@@ -871,6 +885,7 @@
         "required": [
           "phone",
           "ctaLabel",
+          "callLabel",
           "menu"
         ],
         "additionalProperties": false
@@ -991,7 +1006,8 @@
               "sections",
               "legal"
             ],
-            "additionalProperties": false
+            "additionalProperties": false,
+            "description": "Колонки ссылок в подвале сайта"
           },
           "copyrightSuffix": {
             "type": "string",
@@ -1057,7 +1073,8 @@
                   "title",
                   "subtitle"
                 ],
-                "additionalProperties": false
+                "additionalProperties": false,
+                "description": "Шапка страницы — заголовок и вводный абзац"
               },
               "intro": {
                 "type": "object",
@@ -1083,7 +1100,8 @@
                   "title",
                   "body"
                 ],
-                "additionalProperties": false
+                "additionalProperties": false,
+                "description": "Блок «История компании»"
               },
               "values": {
                 "type": "object",
@@ -1109,7 +1127,8 @@
                   "title",
                   "subtitle"
                 ],
-                "additionalProperties": false
+                "additionalProperties": false,
+                "description": "Блок «Ценности»"
               }
             },
             "required": [
@@ -1141,7 +1160,8 @@
                   "title",
                   "subtitle"
                 ],
-                "additionalProperties": false
+                "additionalProperties": false,
+                "description": "Шапка страницы — заголовок и вводный абзац"
               }
             },
             "required": [
@@ -1171,7 +1191,8 @@
                   "title",
                   "subtitle"
                 ],
-                "additionalProperties": false
+                "additionalProperties": false,
+                "description": "Шапка страницы — заголовок и вводный абзац"
               }
             },
             "required": [
@@ -1179,12 +1200,56 @@
             ],
             "additionalProperties": false,
             "description": "Страница «Галерея»"
+          },
+          "thanks": {
+            "type": "object",
+            "properties": {
+              "heading": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Заголовок H1"
+                  },
+                  "subtitle": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": "Абзац под заголовком (режим работы дописывается сам)"
+                  }
+                },
+                "required": [
+                  "title",
+                  "subtitle"
+                ],
+                "additionalProperties": false,
+                "description": "Шапка страницы — заголовок и вводный абзац"
+              },
+              "callLabel": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Текст кнопки звонка"
+              },
+              "backLabel": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Текст ссылки возврата на главную (стрелка ← добавляется сама)"
+              }
+            },
+            "required": [
+              "heading",
+              "callLabel",
+              "backLabel"
+            ],
+            "additionalProperties": false,
+            "description": "Страница «Спасибо» (после отправки заявки)"
           }
         },
         "required": [
           "about",
           "contacts",
-          "gallery"
+          "gallery",
+          "thanks"
         ],
         "additionalProperties": false
       }

@@ -4,6 +4,7 @@ import react from '@astrojs/react';
 import sitemap from '@astrojs/sitemap';
 import mdx from '@astrojs/mdx';
 import tailwindcss from '@tailwindcss/vite';
+import { unified } from '@astrojs/markdown-remark';
 import rehypeSanitize from 'rehype-sanitize';
 
 /**
@@ -168,8 +169,37 @@ export default defineConfig({
   // (`mdx({ extendMarkdownConfig: false })`) — MDX compiles to JSX and
   // sanitizing its HAST tree the same way risks stripping legitimate
   // MDX/JSX nodes; that pipeline's own hardening is a separate task.
+  //
+  // ПОЧЕМУ `processor: unified({...})`, А НЕ `markdown.rehypePlugins` (миграция
+  // 03.09.2026). В Astro 7 дефолтный markdown-движок — Sätteri
+  // (`@astrojs/markdown-satteri`), а remark/rehype-конвейер стал опциональным
+  // процессором `unified()` из `@astrojs/markdown-remark`. Старые поля
+  // `markdown.rehypePlugins/remarkPlugins/remarkRehype` ещё работают, но
+  // через слой совместимости в `astro/dist/core/config/validate.js`
+  // (`coerceLegacyMarkdownPlugins`) — и у него есть ветка, которая ТИХО
+  // выбрасывает плагины:
+  //
+  //   • если `markdown.processor` не задан — Astro сам подставляет `unified()`
+  //     и переносит туда плагины (так это и работало здесь до миграции);
+  //   • но если процессор задан и это НЕ unified (например `satteri({...})` —
+  //     а именно к нему подталкивает соседний deprecation-warning про
+  //     `markdown.gfm`/`smartypants`), плагины НЕ применяются: печатается
+  //     предупреждение, сборка проходит зелёной, санитайзер отваливается.
+  //     Для единственной защиты от stored-XSS в теле товара это неприемлемая
+  //     механика — «поправил gfm, потерял санитайзер, узнал от клиента».
+  //   • плюс сами поля помечены «will be removed in a future major» — на
+  //     следующем мажоре они исчезнут, и молча.
+  //
+  // Явный `processor` убирает обе ловушки: плагин прибит к процессору, а не к
+  // слою совместимости. Вывод при этом БИТ В БИТ прежний — Astro и так уже
+  // подставляла ровно этот `unified()` (проверено: sha всех 22 страниц dist до
+  // и после миграции совпали).
+  //
+  // Замок — `scripts/__tests__/markdown-sanitizer.test.ts`: он берёт процессор
+  // из ЭТОГО файла и прогоняет через него боевой payload. Апгрейд Astro,
+  // который отвяжет санитайзер, уронит тест, а не тихо откроет дыру.
   markdown: {
-    rehypePlugins: [rehypeSanitize],
+    processor: unified({ rehypePlugins: [rehypeSanitize] }),
   },
 
   // ── Картинки ─────────────────────────────────────────────────────────
@@ -246,9 +276,12 @@ export default defineConfig({
     }),
     // extendMarkdownConfig: false — freezes the blog's .mdx pipeline against
     // the `markdown` config above (and any future change to it). Without
-    // this, MDX inherits `markdown.rehypePlugins` by default and would pick
-    // up rehypeSanitize too; that's out of scope here (see comment above the
+    // this, MDX inherits the markdown processor and would pick up
+    // rehypeSanitize too; that's out of scope here (see comment above the
     // `markdown` key) and belongs to whoever hardens the blog pipeline.
+    // НЕ СНИМАТЬ ЭТУ ИЗОЛЯЦИЮ «заодно с санитайзером»: rehype работает по
+    // HAST и НЕ нейтрализует MDX/JSX — он бы резал легитимные MDX-узлы, не
+    // закрывая настоящий вектор (MDX исполняет тело на сборке).
     mdx({ extendMarkdownConfig: false }),
   ],
 

@@ -49,6 +49,14 @@
   один и тот же роут, получится петля.
 - **`set:html={JSON.stringify(...)}` запрещён** — только `serializeJsonLd`
   (закрытая stored-XSS). Тест-страж в `json-ld.test.ts` найдёт нарушение.
+- **Санитайзер markdown не отвязывать от процессора.** `markdown: { processor:
+  unified({ rehypePlugins: [rehypeSanitize] }) }` — единственная защита от
+  stored-XSS в теле товара, которое пишет клиент. Старые поля
+  `markdown.rehypePlugins/...` при чужом процессоре выбрасываются молча:
+  сборка зелёная, `<script>` уезжает в `dist/` (граблина 19b в
+  `docs/recipes/gotchas.md`). Страж — `markdown-sanitizer.test.ts`.
+  Изоляцию блога (`mdx({ extendMarkdownConfig: false })`) не снимать: rehype
+  работает по HAST и MDX/JSX не нейтрализует.
 - **Один eager LCP-кандидат на страницу**; всё остальное lazy
   (`docs/PERFORMANCE.md` §8).
 - **`data/` (лиды, PII) не коммитить** — в `.gitignore` не просто так.

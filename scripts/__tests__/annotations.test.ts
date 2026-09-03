@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 /**
@@ -31,6 +31,20 @@ const OPTIONAL_VISUAL_FIELDS: Record<string, string[]> = {
   team: ['bio', 'photo'],
   stats: ['suffix'],
   partners: ['logo'],
+  // `period` («в месяц») печатается только у тарифов, где оно заполнено —
+  // PricingSection.astro рендерит его под `{plan.period && …}`.
+  pricing: ['period'],
+};
+
+/**
+ * Поля-МАССИВЫ строк: каждый элемент аннотируется своим индексом
+ * (`pricing:<id>:features.3`) — `fd-edit.js` резолвит числовой сегмент
+ * dot-пути как ключ массива (`getByDotPath`), отдельной поддержки не нужно.
+ * Карта отдельная от VISUAL_FIELDS, потому что число атрибутов зависит от
+ * длины массива в контенте, а не от списка полей.
+ */
+const INDEXED_VISUAL_FIELDS: Record<string, string[]> = {
+  pricing: ['features'],
 };
 
 /**
@@ -76,6 +90,9 @@ const SINGLETON_FIELDS: Record<string, string[]> = {
   navigation: [
     'phone',
     'ctaLabel',
+    // Подпись кнопки звонка в нижней панели (MobileStickyCTA, есть на каждой
+    // странице через BaseLayout) — раньше была захардкожена словом «Позвонить».
+    'callLabel',
     'menu.about',
     'menu.services',
     'menu.gallery',
@@ -123,6 +140,14 @@ const ROUTE_SINGLETON_FIELDS: Record<string, Record<string, string[]>> = {
   },
   'gallery/index.html': {
     pages: ['gallery.heading.title', 'gallery.heading.subtitle'],
+  },
+  'thanks/index.html': {
+    pages: [
+      'thanks.heading.title',
+      'thanks.heading.subtitle',
+      'thanks.callLabel',
+      'thanks.backLabel',
+    ],
   },
   // Правовые документы. В CMS вынесены ТОЛЬКО факты оператора (реквизиты,
   // ФИО, даты редакций) — проза остаётся в коде, см. доккоммент legalSchema.
@@ -199,6 +224,28 @@ function categoryItems(): CategoryItem[] {
   ) as CategoryItem[];
 }
 
+/**
+ * Телефонная ссылка — единственное место, где `data-cms` правит НЕ текст, а
+ * атрибут, да ещё и через шаблон: `data-fd-attr="href"` +
+ * `data-fd-attr-template="tel:{value}"`. Связка хрупкая и молчаливая —
+ * потеряется `data-fd-attr-template`, и портал при первой же правке телефона
+ * запишет в `href` голые цифры («+7 (900) 000-00-00» вместо
+ * «tel:+79000000000»): ссылка перестанет звонить, а выглядеть будет
+ * по-прежнему. Ни один другой тест этого не видит, поэтому проверяем каждую
+ * <a>, размеченную `navigation::phone`, на КАЖДОЙ собранной странице.
+ */
+function assertPhoneLinkPattern(html: string, label: string) {
+  const anchors = html.match(/<a\b[^>]*data-cms="navigation::phone"[^>]*>/g) ?? [];
+  for (const tag of anchors) {
+    expect(tag.includes('data-fd-attr="href"'), `phone link without data-fd-attr="href" in ${label}: ${tag}`).toBe(true);
+    expect(
+      tag.includes('data-fd-attr-template="tel:{value}"'),
+      `phone link without the tel: template in ${label}: ${tag}`,
+    ).toBe(true);
+  }
+  return anchors.length;
+}
+
 /** Every data-cms value must be exactly `collection:itemId:field` — 2 colons,
  *  itemId empty for singletons. Guards against typos like a stray ':' inside
  *  a dot-path field name. */
@@ -244,6 +291,21 @@ describe('data-cms annotations (run `npm run build` first — reads dist/*.html)
     });
   }
 
+  for (const [collection, fields] of Object.entries(INDEXED_VISUAL_FIELDS)) {
+    it(`${collection}: every element of every string array annotated by index (home page)`, () => {
+      for (const item of itemsOf<{ id: string } & Record<string, unknown>>(collection)) {
+        for (const field of fields) {
+          const list = item[field];
+          expect(Array.isArray(list), `${collection}:${item.id}:${field} is not an array`).toBe(true);
+          (list as unknown[]).forEach((_, i) => {
+            const attr = `data-cms="${collection}:${item.id}:${field}.${i}"`;
+            expect(homeHtml.includes(attr), `missing ${attr} in dist/index.html`).toBe(true);
+          });
+        }
+      }
+    });
+  }
+
   for (const [collection, fields] of Object.entries(SINGLETON_FIELDS)) {
     it(`${collection}: every singleton field annotated (home page)`, () => {
       for (const field of fields) {
@@ -255,6 +317,12 @@ describe('data-cms annotations (run `npm run build` first — reads dist/*.html)
 
   it('no malformed data-cms attributes on the home page', () => {
     assertNoMalformed(homeHtml, 'dist/index.html');
+  });
+
+  it('every annotated phone link keeps the tel: attribute-template pair (home page)', () => {
+    // Шапка (десктоп + мобильное меню), футер, блок карты, мобильная панель —
+    // если счётчик упал, ссылку либо потеряли, либо перестали размечать.
+    expect(assertPhoneLinkPattern(homeHtml, 'dist/index.html')).toBeGreaterThanOrEqual(4);
   });
 
   // Ported from a client project's ReviewsSection.astro: an optional "source" line
@@ -303,6 +371,10 @@ describe('data-cms annotations (run `npm run build` first — reads dist/*.html)
 
       it('no malformed data-cms attributes', () => {
         assertNoMalformed(html, `dist/${route}`);
+      });
+
+      it('annotated phone links keep the tel: attribute-template pair', () => {
+        assertPhoneLinkPattern(html, `dist/${route}`);
       });
     });
   }
@@ -370,6 +442,109 @@ describe('data-cms annotations (run `npm run build` first — reads dist/*.html)
         const html = readDistPage(route);
         const attrs = [`data-cms="categories:${c.id}:name"`];
         if (c.description) attrs.push(`data-cms="categories:${c.id}:description"`);
+        for (const attr of attrs) {
+          expect(html.includes(attr), `missing ${attr} in dist/${route}`).toBe(true);
+        }
+      });
+    }
+  });
+
+  // ---- products: entries-коллекция с click-to-edit --------------------------
+  //
+  // `products` — коллекция вида `entries` (файл-на-запись), у неё нет общего
+  // JSON, поэтому id читаются из имён файлов `src/content/products/*.md`, а
+  // поля — из фронтматтера. Размечены только СКАЛЯРНЫЕ текстовые поля:
+  // `title`/`price` на карточке товара и `title`/`shortDescription`/`price` на
+  // плитке в сетке категории. `features`/`brands` (массивы), флаги и
+  // markdown-тело click-to-edit не поддаются — правятся формой портала, см.
+  // doc-comment ProductDetail.astro.
+  describe('products: catalog pages', () => {
+    interface ProductItem {
+      slug: string;
+      category: string;
+      price?: string;
+      shortDescription?: string;
+      draft: boolean;
+    }
+
+    /** Скалярные ключи верхнего уровня из YAML-фронтматтера. Полноценный
+     *  YAML-парсер здесь не нужен и не подключён: тесту хватает `category`,
+     *  `price`, `shortDescription` и `draft` — все они простые однострочные
+     *  значения. Многострочные/вложенные поля (features, slider) сознательно
+     *  игнорируются. */
+    function frontmatter(raw: string): Record<string, string> {
+      const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw)?.[1] ?? '';
+      const out: Record<string, string> = {};
+      for (const line of block.split(/\r?\n/)) {
+        const m = /^([A-Za-z][\w]*):[ \t]+(.+)$/.exec(line);
+        if (m) out[m[1]!] = m[2]!.trim().replace(/^['"]|['"]$/g, '');
+      }
+      return out;
+    }
+
+    function productItems(): ProductItem[] {
+      const dir = resolve(ROOT, 'src/content/products');
+      return readdirSync(dir)
+        .filter((f) => f.endsWith('.md'))
+        .map((file) => {
+          const fm = frontmatter(readFileSync(resolve(dir, file), 'utf-8'));
+          return {
+            slug: file.replace(/\.md$/, ''),
+            category: fm['category'] ?? '',
+            price: fm['price'],
+            shortDescription: fm['shortDescription'],
+            draft: fm['draft'] === 'true',
+          };
+        });
+    }
+
+    const categories = categoryItems();
+    const products = productItems().filter((p) => !p.draft);
+
+    /** `<root>` или `<root>/<sub>` — сегмент каталога, в котором живёт товар
+     *  (та же логика, что `categoryPath` в src/lib/catalog.ts). */
+    function categorySegment(id: string): string {
+      const c = categories.find((x) => x.id === id);
+      expect(c, `товар ссылается на несуществующую категорию "${id}"`).toBeDefined();
+      return c!.parent ? `${c!.parent}/${c!.id}` : c!.id;
+    }
+
+    function readDistPage(route: string): string {
+      const distPath = resolve(ROOT, 'dist', route);
+      expect(
+        existsSync(distPath),
+        `dist/${route} not found — run \`npm run build\` before \`npm test\``,
+      ).toBe(true);
+      return readFileSync(distPath, 'utf-8');
+    }
+
+    it('каталог не пуст — иначе проверки ниже пройдут вхолостую', () => {
+      expect(products.length).toBeGreaterThan(0);
+    });
+
+    for (const p of products) {
+      const segment = categorySegment(p.category);
+
+      it(`products:${p.slug}: страница товара размечена (dist/katalog/${segment}/${p.slug}/)`, () => {
+        const route = `katalog/${segment}/${p.slug}/index.html`;
+        const html = readDistPage(route);
+        const attrs = [`data-cms="products:${p.slug}:title"`];
+        if (p.price) attrs.push(`data-cms="products:${p.slug}:price"`);
+        // Надзаголовок карточки — имя КОРНЯ ветки (ProductDetail получает
+        // root-категорию, см. buildCatalogPaths).
+        attrs.push(`data-cms="categories:${segment.split('/')[0]}:name"`);
+        for (const attr of attrs) {
+          expect(html.includes(attr), `missing ${attr} in dist/${route}`).toBe(true);
+        }
+        assertNoMalformed(html, `dist/${route}`);
+      });
+
+      it(`products:${p.slug}: плитка в сетке категории размечена (dist/katalog/${segment}/)`, () => {
+        const route = `katalog/${segment}/index.html`;
+        const html = readDistPage(route);
+        const attrs = [`data-cms="products:${p.slug}:title"`];
+        if (p.shortDescription) attrs.push(`data-cms="products:${p.slug}:shortDescription"`);
+        if (p.price) attrs.push(`data-cms="products:${p.slug}:price"`);
         for (const attr of attrs) {
           expect(html.includes(attr), `missing ${attr} in dist/${route}`).toBe(true);
         }

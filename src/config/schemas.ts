@@ -43,7 +43,7 @@ const MAX = {
   slug: 64,
   /** Badges, eyebrows, button text, menu and link labels, phone numbers. */
   label: 120,
-  /** Headings, names, questions, prices, dates, one-line address. */
+  /** Headings, names, questions, prices, dates, one-line address, short card copy. */
   line: 200,
   /** Subtitles, card copy, list items. */
   sentence: 500,
@@ -55,6 +55,36 @@ const MAX = {
   path: 300,
   /** Bullet points inside one pricing plan. */
   planFeatures: 30,
+
+  // ── Каталог ────────────────────────────────────────────────────────────
+  // У каталога свои, более тесные, каплы: карточка товара — это плитка в
+  // сетке и сниппет в фиде, а не абзац. Значения ЗАФИКСИРОВАНЫ живыми
+  // сайтами (контракт `content.schema.json` уже стоит у клиентов, Ajv
+  // портала валидирует по нему сохранение) — имена здесь заводились, чтобы
+  // убрать литералы из схем, а не чтобы пересмотреть числа. Менять число =
+  // менять контракт: сначала миграция контента, потом правка.
+  /** Название товара — заголовок карточки и `<h1>` страницы. */
+  productTitle: 80,
+  /** Название категории — заголовок плитки каталога. */
+  categoryName: 60,
+  /** Цена свободной строкой («от 12 500 ₽») — см. доккоммент productSchema. */
+  price: 40,
+  /** Один пункт списка «Особенности» товара. */
+  feature: 80,
+  /** Название бренда/производителя. */
+  brand: 40,
+  /** SEO-`<title>` — длиннее выдача обрезает. */
+  metaTitle: 70,
+  /** SEO-`<meta description>` — длиннее выдача обрезает. */
+  metaDescription: 160,
+  /** Кадров в верхнем слайдере карточки товара. */
+  sliderImages: 20,
+  /** Кадров в нижней секции «Галерея» карточки товара. */
+  galleryImages: 30,
+  /** Пунктов в списке «Особенности» одного товара. */
+  productFeatures: 12,
+  /** Брендов у одного товара. */
+  productBrands: 8,
 } as const;
 
 /** `z.string().max(n).describe(d)` — spelled out so every field below reads
@@ -66,8 +96,18 @@ const text = (max: number, description: string) => z.string().max(max).describe(
  * It survives reordering and renaming, so the CMS portal and the visual editor
  * can address one exact block: `features:speed:title` (the `data-cms` format —
  * see docs/CMS-BUILDING.md). Never renumber these; add new ones instead.
+ *
+ * `.describe()` здесь не косметика: подпись поля в форме портала — это
+ * `description ?? <имя поля>`, поэтому поле без описания показывает клиенту
+ * сырой английский ключ (`id`) посреди русского интерфейса. Замок —
+ * `scripts/__tests__/generate-content-schema.test.ts` («каждое поле
+ * контракта подписано по-русски»).
  */
-const id = z.string().min(1).max(MAX.slug);
+const id = z
+  .string()
+  .min(1)
+  .max(MAX.slug)
+  .describe('Служебный идентификатор карточки (латиницей; менять нельзя — потеряется связь с сайтом)');
 
 /** "Why us" / services grid. */
 export const featureSchema = z.object({
@@ -231,6 +271,7 @@ export const sectionTextsSchema = z.object({
 export const navigationSchema = z.object({
   phone: text(MAX.label, 'Номер телефона для отображения (шапка, футер, карта, контакты)'),
   ctaLabel: text(MAX.label, 'Текст кнопки «Оставить заявку» в шапке и мобильном меню'),
+  callLabel: text(MAX.label, 'Текст кнопки звонка в нижней панели на телефоне'),
   menu: z
     .object({
       about: text(MAX.label, 'Пункт меню «О нас»'),
@@ -245,34 +286,36 @@ export const navigationSchema = z.object({
 
 /** Footer link labels + legal line. Hrefs stay structural in config/nav.ts. */
 export const footerSchema = z.object({
-  columns: z.object({
-    sections: z
-      .object({
-        title: text(MAX.label, 'Заголовок колонки «Разделы»'),
-        links: z
-          .object({
-            home: text(MAX.label, 'Текст ссылки «Главная» (футер)'),
-            about: text(MAX.label, 'Текст ссылки «О нас» (футер)'),
-            gallery: text(MAX.label, 'Текст ссылки «Галерея» (футер)'),
-            blog: text(MAX.label, 'Текст ссылки «Блог» (футер)'),
-            contacts: text(MAX.label, 'Текст ссылки «Контакты» (футер)'),
-          })
-          .describe('Подписи ссылок колонки «Разделы»'),
-      })
-      .describe('Колонка «Разделы»'),
-    legal: z
-      .object({
-        title: text(MAX.label, 'Заголовок колонки «Правовое»'),
-        links: z
-          .object({
-            privacy: text(MAX.label, 'Текст ссылки «Политика конфиденциальности»'),
-            consent: text(MAX.label, 'Текст ссылки «Согласие на обработку данных»'),
-            terms: text(MAX.label, 'Текст ссылки «Пользовательское соглашение»'),
-          })
-          .describe('Подписи ссылок колонки «Правовое»'),
-      })
-      .describe('Колонка «Правовое»'),
-  }),
+  columns: z
+    .object({
+      sections: z
+        .object({
+          title: text(MAX.label, 'Заголовок колонки «Разделы»'),
+          links: z
+            .object({
+              home: text(MAX.label, 'Текст ссылки «Главная» (футер)'),
+              about: text(MAX.label, 'Текст ссылки «О нас» (футер)'),
+              gallery: text(MAX.label, 'Текст ссылки «Галерея» (футер)'),
+              blog: text(MAX.label, 'Текст ссылки «Блог» (футер)'),
+              contacts: text(MAX.label, 'Текст ссылки «Контакты» (футер)'),
+            })
+            .describe('Подписи ссылок колонки «Разделы»'),
+        })
+        .describe('Колонка «Разделы»'),
+      legal: z
+        .object({
+          title: text(MAX.label, 'Заголовок колонки «Правовое»'),
+          links: z
+            .object({
+              privacy: text(MAX.label, 'Текст ссылки «Политика конфиденциальности»'),
+              consent: text(MAX.label, 'Текст ссылки «Согласие на обработку данных»'),
+              terms: text(MAX.label, 'Текст ссылки «Пользовательское соглашение»'),
+            })
+            .describe('Подписи ссылок колонки «Правовое»'),
+        })
+        .describe('Колонка «Правовое»'),
+    })
+    .describe('Колонки ссылок в подвале сайта'),
   copyrightSuffix: text(MAX.sentence, 'Текст после «© {год} {юрлицо}» в нижней строке футера'),
 });
 
@@ -357,38 +400,66 @@ export const addressSchema = z.object({
 export const pagesSchema = z.object({
   about: z
     .object({
-      heading: z.object({
-        title: text(MAX.line, 'Заголовок H1'),
-        subtitle: text(MAX.paragraph, 'Вводный абзац под заголовком'),
-      }),
-      intro: z.object({
-        eyebrow: text(MAX.label, 'Надпись над заголовком'),
-        title: text(MAX.line, 'Заголовок блока истории компании'),
-        body: text(MAX.paragraph, 'Текст истории компании'),
-      }),
-      values: z.object({
-        eyebrow: text(MAX.label, 'Надпись над заголовком'),
-        title: text(MAX.line, 'Заголовок блока ценностей'),
-        subtitle: text(MAX.sentence, 'Подзаголовок блока ценностей'),
-      }),
+      heading: z
+        .object({
+          title: text(MAX.line, 'Заголовок H1'),
+          subtitle: text(MAX.paragraph, 'Вводный абзац под заголовком'),
+        })
+        .describe('Шапка страницы — заголовок и вводный абзац'),
+      intro: z
+        .object({
+          eyebrow: text(MAX.label, 'Надпись над заголовком'),
+          title: text(MAX.line, 'Заголовок блока истории компании'),
+          body: text(MAX.paragraph, 'Текст истории компании'),
+        })
+        .describe('Блок «История компании»'),
+      values: z
+        .object({
+          eyebrow: text(MAX.label, 'Надпись над заголовком'),
+          title: text(MAX.line, 'Заголовок блока ценностей'),
+          subtitle: text(MAX.sentence, 'Подзаголовок блока ценностей'),
+        })
+        .describe('Блок «Ценности»'),
     })
     .describe('Страница «О нас»'),
   contacts: z
     .object({
-      heading: z.object({
-        title: text(MAX.line, 'Заголовок H1'),
-        subtitle: text(MAX.paragraph, 'Вводный абзац под заголовком'),
-      }),
+      heading: z
+        .object({
+          title: text(MAX.line, 'Заголовок H1'),
+          subtitle: text(MAX.paragraph, 'Вводный абзац под заголовком'),
+        })
+        .describe('Шапка страницы — заголовок и вводный абзац'),
     })
     .describe('Страница «Контакты»'),
   gallery: z
     .object({
-      heading: z.object({
-        title: text(MAX.line, 'Заголовок H1'),
-        subtitle: text(MAX.paragraph, 'Вводный абзац под заголовком'),
-      }),
+      heading: z
+        .object({
+          title: text(MAX.line, 'Заголовок H1'),
+          subtitle: text(MAX.paragraph, 'Вводный абзац под заголовком'),
+        })
+        .describe('Шапка страницы — заголовок и вводный абзац'),
     })
     .describe('Страница «Галерея»'),
+  // Страница «спасибо» — это последнее, что человек читает после отправки
+  // заявки, и первое, что клиент захочет переписать под свой тон («перезвоним
+  // за 15 минут», «работаем до 20:00»). До этого весь её текст был захардкожен
+  // в thanks.astro. Режим работы к `subtitle` дописывает компонент из
+  // `SITE.workingHours` — он вне data-cms-элемента, чтобы правка не унесла его
+  // в сохранённое значение (Шаг 5, правило 3).
+  thanks: z
+    .object({
+      heading: z
+        .object({
+          title: text(MAX.line, 'Заголовок H1'),
+          subtitle: text(MAX.paragraph, 'Абзац под заголовком (режим работы дописывается сам)'),
+        })
+        .describe('Шапка страницы — заголовок и вводный абзац'),
+      callLabel: text(MAX.label, 'Текст кнопки звонка'),
+      backLabel: text(MAX.label, 'Текст ссылки возврата на главную (стрелка ← добавляется сама)'),
+    })
+    .describe('Страница «Спасибо» (после отправки заявки)'),
 });
 
 /**
@@ -464,10 +535,13 @@ export const categorySchema = z.object({
   id: z
     .string()
     .max(MAX.slug)
-    .regex(/^[a-z0-9-]{1,64}$/)
+    // Тот же кап, что и `.max(MAX.slug)` выше — но здесь он ещё и запрещает
+    // всё, кроме латиницы/цифр/дефиса: id категории уходит в URL. Литерал 64
+    // в регэкспе разъехался бы с MAX.slug молча, поэтому собирается из него.
+    .regex(new RegExp(`^[a-z0-9-]{1,${MAX.slug}}$`))
     .describe('Идентификатор (латиница, без пробелов; менять нельзя)'),
-  name: z.string().min(1).max(60).describe('Название категории'),
-  description: z.string().max(200).optional().describe('Короткое описание для карточки'),
+  name: z.string().min(1).max(MAX.categoryName).describe('Название категории'),
+  description: z.string().max(MAX.line).optional().describe('Короткое описание для карточки'),
   image: z
     .string()
     .max(MAX.path)
@@ -484,16 +558,18 @@ export const categorySchema = z.object({
 });
 export type CatalogCategory = z.infer<typeof categorySchema>;
 
-/** Товар каталога — frontmatter записи src/content/products/<slug>.mdx. */
+/** Товар каталога — frontmatter записи src/content/products/<slug>.md
+ *  (именно `.md`, не `.mdx` — тело правит клиент, см. docs/CMS-BUILDING.md
+ *  «`.md`, никогда не `.mdx`»). */
 export const productSchema = z.object({
-  title: z.string().min(1).max(80).describe('Название товара'),
+  title: z.string().min(1).max(MAX.productTitle).describe('Название товара'),
   category: z
     .string()
     .min(1)
     .max(MAX.slug)
     .meta({ format: 'ref:categories' })
     .describe('Категория (лист дерева)'),
-  shortDescription: z.string().min(1).max(200).describe('Краткое описание для карточки'),
+  shortDescription: z.string().min(1).max(MAX.line).describe('Краткое описание для карточки'),
   // ТРИ СЛОЯ МЕДИА (урок боевого проекта, спека 2026-08-11 «Разбор фотоархива»).
   // Слой назван так же, как выглядит на странице — чтобы «галерея» не означала
   // в схеме одно, а в вёрстке другое:
@@ -510,23 +586,57 @@ export const productSchema = z.object({
   image: z.string().min(1).max(MAX.path).meta({ format: 'image' }).describe('Обложка'),
   slider: z
     .array(z.string().max(MAX.path).meta({ format: 'image' }))
-    .max(20)
+    .max(MAX.sliderImages)
     .default([])
     .describe('Слайдер: фото товара (верх карточки)'),
   gallery: z
     .array(z.string().max(MAX.path).meta({ format: 'image' }))
-    .max(30)
+    .max(MAX.galleryImages)
     .default([])
     .describe('Галерея: остальные фото (нижняя секция карточки)'),
-  price: z.string().max(40).optional().describe('Цена (свободный формат, напр. «от 12 500 ₽»)'),
-  features: z.array(z.string().max(80)).max(12).default([]).describe('Особенности (по строке)'),
-  brands: z.array(z.string().max(40)).max(8).default([]).describe('Бренды/производители'),
+  // ЦЕНА — ОСОЗНАННО СВОБОДНАЯ СТРОКА, а не число + валюта. Решение
+  // пересматривалось 2026-09-03 и оставлено в силе; три причины, по которым
+  // структурирование здесь хуже, а не лучше:
+  //
+  //  1. Машинам структура УЖЕ НЕ НУЖНА. Строку разбирает один общий парсер
+  //     `parsePrice()` (src/lib/price.ts) — им пользуются все три потребителя
+  //     числа: ProductJsonLd, YML-фид Директа и фид Merchant Center, поэтому
+  //     цифра на сайте и в фидах одна и та же по построению. Не распозналось —
+  //     `undefined`, и оффер просто не эмитится: провал тихий, но безопасный
+  //     (лучше товар без цены в фиде, чем товар с ВЫДУМАННОЙ ценой).
+  //     Валюта — свойство сайта, а не позиции: `FEEDS.currency`
+  //     (src/config/feeds.ts). Поле `currency` у каждого товара было бы
+  //     четвёртым местом, где её можно рассогласовать.
+  //  2. Реальная цена — не скаляр. «от 12 500 ₽», «12 500–18 300 ₽»,
+  //     «1 200 ₽/пог. м», «по запросу» — это то, что клиент говорит
+  //     покупателю. Пара «число + валюта» не выражает ни «от», ни «по
+  //     запросу», и вместо одной строки мебельщик получил бы форму из
+  //     четырёх полей с флажком «цена договорная».
+  //  3. Миграция ломала бы живые сайты молча. В поле у клиентов лежит текст;
+  //     перевести его в число можно только угадыванием, а неверно угаданная
+  //     цена — единственная ошибка в этой схеме, которая стоит денег и
+  //     которую никто не заметит до звонка покупателя.
+  //
+  // Если однажды понадобится «от/до» машинам (AggregateOffer с реальными
+  // lowPrice/highPrice) — заводить ОТДЕЛЬНЫЕ необязательные числовые поля
+  // рядом, оставив `price` витриной. Ломать этот контракт — нельзя.
+  price: z.string().max(MAX.price).optional().describe('Цена (свободный формат, напр. «от 12 500 ₽»)'),
+  features: z
+    .array(z.string().max(MAX.feature))
+    .max(MAX.productFeatures)
+    .default([])
+    .describe('Особенности (по строке)'),
+  brands: z
+    .array(z.string().max(MAX.brand))
+    .max(MAX.productBrands)
+    .default([])
+    .describe('Бренды/производители'),
   isHit: z.boolean().default(false).describe('Пометить как «Хит»'),
   isNew: z.boolean().default(false).describe('Пометить как «Новинка»'),
   priority: z.number().default(0).describe('Порядок в сетке (больше — выше)'),
   draft: z.boolean().default(false).describe('Черновик (не показывать на сайте)'),
-  metaTitle: z.string().max(70).optional().describe('SEO-заголовок (title)'),
-  metaDescription: z.string().max(160).optional().describe('SEO-описание (description)'),
+  metaTitle: z.string().max(MAX.metaTitle).optional().describe('SEO-заголовок (title)'),
+  metaDescription: z.string().max(MAX.metaDescription).optional().describe('SEO-описание (description)'),
 });
 export type CatalogProduct = z.infer<typeof productSchema>;
 

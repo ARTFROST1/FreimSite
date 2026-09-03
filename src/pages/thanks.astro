@@ -7,12 +7,21 @@
  * and is the redirect target of <LeadForm success="redirect">.
  *
  * noindex — a thank-you page must never rank.
+ *
+ * Весь видимый текст страницы — контент (`pages::thanks.*`), а не хардкод:
+ * это последний экран воронки, и формулировку («перезвоним за 15 минут»)
+ * клиент правит сам. Режим работы дописывается ПОСЛЕ размеченного <span> —
+ * иначе первая же правка в портале утащила бы его в сохранённое значение
+ * (docs/CMS-BUILDING.md «Шаг 5», правило 3); по той же причине стрелка «←»
+ * стоит снаружи ссылки возврата.
  */
+import { getEntry } from 'astro:content';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { SITE, activeSocialLinks } from '../config/site';
 import { phoneHref } from '../lib/utils';
 
 const socials = activeSocialLinks();
+const PAGE = (await getEntry('pages', 'main'))!.data.thanks;
 ---
 <BaseLayout
   title={`Заявка отправлена — ${SITE.name}`}
@@ -22,9 +31,9 @@ const socials = activeSocialLinks();
   <main class="section" data-thankyou>
     <div class="container-page flex min-h-[55vh] flex-col items-center justify-center text-center">
       <span aria-hidden="true" class="text-6xl leading-none text-success">✓</span>
-      <h1 class="mt-6 text-3xl font-bold md:text-4xl">Спасибо! Заявка отправлена</h1>
+      <h1 class="mt-6 text-3xl font-bold md:text-4xl" data-cms="pages::thanks.heading.title">{PAGE.heading.title}</h1>
       <p class="mt-4 max-w-md text-muted">
-        Мы свяжемся с вами в ближайшее рабочее время.
+        <span data-cms="pages::thanks.heading.subtitle">{PAGE.heading.subtitle}</span>
         {SITE.workingHours.display && ` Режим работы: ${SITE.workingHours.display}.`}
       </p>
 
@@ -37,7 +46,7 @@ const socials = activeSocialLinks();
           data-fd-attr="href"
           data-fd-attr-template="tel:{value}"
         >
-          Позвонить сейчас
+          <span data-cms="pages::thanks.callLabel">{PAGE.callLabel}</span>
         </a>
         {
           socials.map(([key, url]) => (
@@ -54,7 +63,7 @@ const socials = activeSocialLinks();
         }
       </div>
 
-      <a href="/" class="btn btn-ghost mt-10 text-sm">← Вернуться на главную</a>
+      <a href="/" class="btn btn-ghost mt-10 text-sm">← <span data-cms="pages::thanks.backLabel">{PAGE.backLabel}</span></a>
     </div>
   </main>
 </BaseLayout>

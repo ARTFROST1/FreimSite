@@ -25,6 +25,15 @@
  * `GalleryGrid.astro`): each slide is a button carrying `data-lightbox` with
  * a real, optimized full-size URL, so the same three lines of markup work
  * whether the source is a registry asset or a CMS/public URL.
+ *
+ * data-cms: `products:<slug>:<field>` — `itemId` записи `entries` это её слаг
+ * (имя файла в `src/content/products/`), тот же, что стоит в маршруте. Размечены
+ * только СКАЛЯРНЫЕ текстовые поля (`title`, `price`): `fd-edit.js` правит
+ * `textContent` целиком, поэтому массивы (`features`, `brands` — последний
+ * ещё и склеен через `join(', ')`) и markdown-тело остаются правкой через
+ * форму портала, без click-to-edit. Надзаголовок — поле КАТЕГОРИИ
+ * (`categories:<root>:name`), ровно как `<h1>` на странице категории.
+ * Подробности конвенции — docs/CMS-BUILDING.md «Шаг 5».
  */
 import type { CollectionEntry } from 'astro:content';
 import type { AstroComponentFactory } from 'astro/runtime/server/index.js';
@@ -71,8 +80,8 @@ const fullUrls = await Promise.all(images.map((src) => lightboxUrl(src)));
 
 <div class="container-page space-y-12 py-10">
   <div>
-    <span class="eyebrow">{category?.name ?? 'Каталог'}</span>
-    <h1 class="text-3xl font-bold md:text-4xl">{title}</h1>
+    <span class="eyebrow" data-cms={category ? `categories:${category.id}:name` : undefined}>{category?.name ?? 'Каталог'}</span>
+    <h1 class="text-3xl font-bold md:text-4xl" data-cms={`products:${product.id}:title`}>{title}</h1>
   </div>
 
   <!-- Gallery + specs -->
@@ -122,9 +131,17 @@ const fullUrls = await Promise.all(images.map((src) => lightboxUrl(src)));
                 aria-label={`Показать фото ${i + 1}`}
                 class="group overflow-hidden rounded-lg border-2 border-transparent p-0 opacity-65 transition-[border-color,opacity] duration-200 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent aria-[current=true]:border-accent aria-[current=true]:opacity-100"
               >
+                {/* Миниатюра — чисто визуальная: имя кнопке даёт её
+                    aria-label («Показать фото N»), поэтому картинка
+                    убирается из дерева доступности целиком. Одного alt=""
+                    хватало бы, но aria-hidden ещё и гарантирует, что
+                    будущий alt (скопированный из соседнего слайда
+                    рефакторингом) не начнёт озвучиваться внутри кнопки
+                    вторым именем. */}
                 <ContentImage
                   src={src}
                   alt=""
+                  aria-hidden="true"
                   widths={[160, 320]}
                   sizes="160px"
                   width={320}
@@ -145,7 +162,7 @@ const fullUrls = await Promise.all(images.map((src) => lightboxUrl(src)));
             {price && (
               <div class="flex flex-col gap-1">
                 <span class="text-xs font-semibold uppercase tracking-wide text-muted">Цена</span>
-                <span class="text-2xl font-bold">{price}</span>
+                <span class="text-2xl font-bold" data-cms={`products:${product.id}:price`}>{price}</span>
               </div>
             )}
             {brands.length > 0 && (
