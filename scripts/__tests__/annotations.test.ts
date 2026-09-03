@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 /**
@@ -370,6 +370,109 @@ describe('data-cms annotations (run `npm run build` first — reads dist/*.html)
         const html = readDistPage(route);
         const attrs = [`data-cms="categories:${c.id}:name"`];
         if (c.description) attrs.push(`data-cms="categories:${c.id}:description"`);
+        for (const attr of attrs) {
+          expect(html.includes(attr), `missing ${attr} in dist/${route}`).toBe(true);
+        }
+      });
+    }
+  });
+
+  // ---- products: entries-коллекция с click-to-edit --------------------------
+  //
+  // `products` — коллекция вида `entries` (файл-на-запись), у неё нет общего
+  // JSON, поэтому id читаются из имён файлов `src/content/products/*.md`, а
+  // поля — из фронтматтера. Размечены только СКАЛЯРНЫЕ текстовые поля:
+  // `title`/`price` на карточке товара и `title`/`shortDescription`/`price` на
+  // плитке в сетке категории. `features`/`brands` (массивы), флаги и
+  // markdown-тело click-to-edit не поддаются — правятся формой портала, см.
+  // doc-comment ProductDetail.astro.
+  describe('products: catalog pages', () => {
+    interface ProductItem {
+      slug: string;
+      category: string;
+      price?: string;
+      shortDescription?: string;
+      draft: boolean;
+    }
+
+    /** Скалярные ключи верхнего уровня из YAML-фронтматтера. Полноценный
+     *  YAML-парсер здесь не нужен и не подключён: тесту хватает `category`,
+     *  `price`, `shortDescription` и `draft` — все они простые однострочные
+     *  значения. Многострочные/вложенные поля (features, slider) сознательно
+     *  игнорируются. */
+    function frontmatter(raw: string): Record<string, string> {
+      const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw)?.[1] ?? '';
+      const out: Record<string, string> = {};
+      for (const line of block.split(/\r?\n/)) {
+        const m = /^([A-Za-z][\w]*):[ \t]+(.+)$/.exec(line);
+        if (m) out[m[1]!] = m[2]!.trim().replace(/^['"]|['"]$/g, '');
+      }
+      return out;
+    }
+
+    function productItems(): ProductItem[] {
+      const dir = resolve(ROOT, 'src/content/products');
+      return readdirSync(dir)
+        .filter((f) => f.endsWith('.md'))
+        .map((file) => {
+          const fm = frontmatter(readFileSync(resolve(dir, file), 'utf-8'));
+          return {
+            slug: file.replace(/\.md$/, ''),
+            category: fm['category'] ?? '',
+            price: fm['price'],
+            shortDescription: fm['shortDescription'],
+            draft: fm['draft'] === 'true',
+          };
+        });
+    }
+
+    const categories = categoryItems();
+    const products = productItems().filter((p) => !p.draft);
+
+    /** `<root>` или `<root>/<sub>` — сегмент каталога, в котором живёт товар
+     *  (та же логика, что `categoryPath` в src/lib/catalog.ts). */
+    function categorySegment(id: string): string {
+      const c = categories.find((x) => x.id === id);
+      expect(c, `товар ссылается на несуществующую категорию "${id}"`).toBeDefined();
+      return c!.parent ? `${c!.parent}/${c!.id}` : c!.id;
+    }
+
+    function readDistPage(route: string): string {
+      const distPath = resolve(ROOT, 'dist', route);
+      expect(
+        existsSync(distPath),
+        `dist/${route} not found — run \`npm run build\` before \`npm test\``,
+      ).toBe(true);
+      return readFileSync(distPath, 'utf-8');
+    }
+
+    it('каталог не пуст — иначе проверки ниже пройдут вхолостую', () => {
+      expect(products.length).toBeGreaterThan(0);
+    });
+
+    for (const p of products) {
+      const segment = categorySegment(p.category);
+
+      it(`products:${p.slug}: страница товара размечена (dist/katalog/${segment}/${p.slug}/)`, () => {
+        const route = `katalog/${segment}/${p.slug}/index.html`;
+        const html = readDistPage(route);
+        const attrs = [`data-cms="products:${p.slug}:title"`];
+        if (p.price) attrs.push(`data-cms="products:${p.slug}:price"`);
+        // Надзаголовок карточки — имя КОРНЯ ветки (ProductDetail получает
+        // root-категорию, см. buildCatalogPaths).
+        attrs.push(`data-cms="categories:${segment.split('/')[0]}:name"`);
+        for (const attr of attrs) {
+          expect(html.includes(attr), `missing ${attr} in dist/${route}`).toBe(true);
+        }
+        assertNoMalformed(html, `dist/${route}`);
+      });
+
+      it(`products:${p.slug}: плитка в сетке категории размечена (dist/katalog/${segment}/)`, () => {
+        const route = `katalog/${segment}/index.html`;
+        const html = readDistPage(route);
+        const attrs = [`data-cms="products:${p.slug}:title"`];
+        if (p.shortDescription) attrs.push(`data-cms="products:${p.slug}:shortDescription"`);
+        if (p.price) attrs.push(`data-cms="products:${p.slug}:price"`);
         for (const attr of attrs) {
           expect(html.includes(attr), `missing ${attr} in dist/${route}`).toBe(true);
         }

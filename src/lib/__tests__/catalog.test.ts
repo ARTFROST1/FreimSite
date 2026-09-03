@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCatalogPaths, categoryPath, productHref } from '../catalog';
+import { buildCatalogPaths, categoryPath, productHref, sortProducts } from '../catalog';
 
 const cats = [
   { id: 'okna', name: 'Окна', priority: 2 },
@@ -10,6 +10,39 @@ const prods = [
   { id: 'okno-1', data: { title: 'Окно', category: 'okna-plastikovye', draft: false, priority: 0 } },
   { id: 'dver-1', data: { title: 'Дверь', category: 'dveri', draft: true, priority: 0 } },
 ];
+
+/**
+ * Порядок товаров в сетке — единственный, который видит клиент, и правит он
+ * его полем «Порядок» (`priority`) в портале. Правило зафиксировано тестом,
+ * потому что «просто отсортировано» — не контракт: без второго ключа порядок
+ * товаров с одинаковым priority зависел бы от порядка чтения файлов с диска
+ * и менялся бы между машинами при одном и том же контенте.
+ */
+describe('sortProducts', () => {
+  const p = (id: string, title: string, priority: number) => ({ id, data: { title, priority } });
+
+  it('больше priority — выше', () => {
+    const sorted = sortProducts([p('a', 'А', 1), p('b', 'Б', 5), p('c', 'В', 3)] as never);
+    expect(sorted.map((x) => x.id)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('при равном priority — по названию, русским алфавитом', () => {
+    const sorted = sortProducts([p('c', 'Ярость', 0), p('a', 'Ёлка', 0), p('b', 'Автор', 0)] as never);
+    expect(sorted.map((x) => x.id)).toEqual(['b', 'a', 'c']);
+  });
+
+  it('priority по умолчанию 0 — товар без поля не всплывает и не тонет', () => {
+    const noPriority = { id: 'x', data: { title: 'Аноним' } };
+    const sorted = sortProducts([p('plus', 'Ббб', 1), noPriority, p('minus', 'Ааа', -1)] as never);
+    expect(sorted.map((x) => x.id)).toEqual(['plus', 'x', 'minus']);
+  });
+
+  it('не мутирует исходный массив', () => {
+    const input = [p('a', 'А', 1), p('b', 'Б', 5)] as never;
+    sortProducts(input);
+    expect((input as { id: string }[]).map((x) => x.id)).toEqual(['a', 'b']);
+  });
+});
 
 describe('buildCatalogPaths', () => {
   it('builds category, subcategory and product paths; drafts excluded', () => {

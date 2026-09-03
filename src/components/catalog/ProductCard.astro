@@ -3,6 +3,14 @@
  * ProductCard — catalog grid tile for a single product. Same shape as
  * BlogCard (../blog/BlogCard.astro): image + title + copy + link, plus the
  * isHit/isNew badges from `productSchema` (src/config/schemas.ts).
+ *
+ * data-cms: `products:<slug>:<field>` (слаг записи = имя файла в
+ * `src/content/products/`, он же сегмент маршрута). Заголовок лежит внутри
+ * `<a>`, поэтому атрибут — на `<span>` ВНУТРИ ссылки, а не на ней самой
+ * (иначе правка текста снесла бы разметку ссылки; см. docs/CMS-BUILDING.md
+ * «Шаг 5», правило 2). Картинка НЕ размечена `data-fd-attr="src"`: значение
+ * поля — ключ реестра, а не URL, — та же причина, что у CategoryCard.
+ * Бейджи «Хит»/«Новинка» — булевы флаги, правятся формой (правило 4).
  */
 import type { CollectionEntry } from 'astro:content';
 import ContentImage from '../ui/ContentImage.astro';
@@ -42,11 +50,11 @@ const { title, shortDescription, image, price, isHit, isNew } = product.data;
   </a>
   <div class="flex flex-1 flex-col p-5">
     <h3 class="text-lg font-semibold leading-snug">
-      <a href={href} class="transition-colors hover:text-accent">{title}</a>
+      <a href={href} class="transition-colors hover:text-accent"><span data-cms={`products:${product.id}:title`}>{title}</span></a>
     </h3>
-    <p class="mt-2 line-clamp-2 flex-1 text-sm text-muted">{shortDescription}</p>
+    <p class="mt-2 line-clamp-2 flex-1 text-sm text-muted" data-cms={`products:${product.id}:shortDescription`}>{shortDescription}</p>
     <div class="mt-4 flex items-center justify-between gap-3">
-      {price ? <span class="text-base font-bold">{price}</span> : <span />}
+      {price ? <span class="text-base font-bold" data-cms={`products:${product.id}:price`}>{price}</span> : <span />}
       <a href={href} class="text-sm font-medium text-accent">Подробнее →</a>
     </div>
   </div>

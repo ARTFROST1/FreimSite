@@ -25,6 +25,15 @@
  * `GalleryGrid.astro`): each slide is a button carrying `data-lightbox` with
  * a real, optimized full-size URL, so the same three lines of markup work
  * whether the source is a registry asset or a CMS/public URL.
+ *
+ * data-cms: `products:<slug>:<field>` — `itemId` записи `entries` это её слаг
+ * (имя файла в `src/content/products/`), тот же, что стоит в маршруте. Размечены
+ * только СКАЛЯРНЫЕ текстовые поля (`title`, `price`): `fd-edit.js` правит
+ * `textContent` целиком, поэтому массивы (`features`, `brands` — последний
+ * ещё и склеен через `join(', ')`) и markdown-тело остаются правкой через
+ * форму портала, без click-to-edit. Надзаголовок — поле КАТЕГОРИИ
+ * (`categories:<root>:name`), ровно как `<h1>` на странице категории.
+ * Подробности конвенции — docs/CMS-BUILDING.md «Шаг 5».
  */
 import type { CollectionEntry } from 'astro:content';
 import type { AstroComponentFactory } from 'astro/runtime/server/index.js';
@@ -71,8 +80,8 @@ const fullUrls = await Promise.all(images.map((src) => lightboxUrl(src)));
 
 <div class="container-page space-y-12 py-10">
   <div>
-    <span class="eyebrow">{category?.name ?? 'Каталог'}</span>
-    <h1 class="text-3xl font-bold md:text-4xl">{title}</h1>
+    <span class="eyebrow" data-cms={category ? `categories:${category.id}:name` : undefined}>{category?.name ?? 'Каталог'}</span>
+    <h1 class="text-3xl font-bold md:text-4xl" data-cms={`products:${product.id}:title`}>{title}</h1>
   </div>
 
   <!-- Gallery + specs -->
@@ -153,7 +162,7 @@ const fullUrls = await Promise.all(images.map((src) => lightboxUrl(src)));
             {price && (
               <div class="flex flex-col gap-1">
                 <span class="text-xs font-semibold uppercase tracking-wide text-muted">Цена</span>
-                <span class="text-2xl font-bold">{price}</span>
+                <span class="text-2xl font-bold" data-cms={`products:${product.id}:price`}>{price}</span>
               </div>
             )}
             {brands.length > 0 && (
