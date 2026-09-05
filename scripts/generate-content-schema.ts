@@ -250,8 +250,9 @@ export interface CollectionContract {
 /**
  * Contract for a "многофайловая" (one Markdown/MDX file per item) collection —
  * distinct from `CollectionContract`, which is a single JSON file holding an
- * array or a singleton object. Products live under `dir` as one `.mdx` per
- * item with frontmatter validated against `itemSchema`; `body` describes
+ * array or a singleton object. Products live under `dir` as one `.md` per
+ * item (the actual extension is whatever this contract's `ext` field says)
+ * with frontmatter validated against `itemSchema`; `body` describes
  * whether/how the portal edits the Markdown body below the frontmatter.
  */
 export interface EntriesContract {
