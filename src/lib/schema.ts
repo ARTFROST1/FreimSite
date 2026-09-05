@@ -265,7 +265,9 @@ export function articleSchema(opts: {
     ...(opts.image ? { image: absoluteUrl(opts.image) } : {}),
     datePublished: iso(opts.datePublished),
     dateModified: iso(opts.dateModified ?? opts.datePublished),
-    author: { '@type': 'Organization', name: opts.author ?? SITE.name },
+    // `||`, не `??` — пустая строка от портала («автор» не заполнен) не
+    // должна давать `author: { name: '' }`, только undefined-от-портала.
+    author: { '@type': 'Organization', name: opts.author || SITE.name },
     publisher: {
       '@type': 'Organization',
       name: SITE.name,

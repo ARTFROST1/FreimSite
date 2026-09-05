@@ -83,7 +83,7 @@ astro-starter/
 │   │   │                     #   partners, timeline
 │   │   ├── nav/*.json        #   сквозное: navigation, footer, address
 │   │   ├── pages/pages.json  #   тексты страниц about/contacts/gallery
-│   │   └── blog/*.mdx        #   статьи
+│   │   └── blog/*.{md,mdx}   #   статьи: .md — клиент через портал, .mdx — разработчик
 │   │
 │   ├── pages/                # файловая маршрутизация
 │   │   ├── index.astro       #   /
@@ -158,7 +158,7 @@ pages/   →  маршруты (что где живёт)
 | Astro-компоненты | PascalCase | `HeroSection.astro` |
 | React-острова | PascalCase | `ContactForm.tsx` |
 | Утилиты/конфиги TS | kebab/lowerCamel | `analytics.ts`, `site.ts` |
-| MDX-статьи | kebab-case (= URL) | `lago-naki-guide.mdx` |
+| Статьи блога | kebab-case (= URL) | `lago-naki-guide.md` / `.mdx` |
 | Папки | kebab-case | `components/sections/` |
 
 Прочее:

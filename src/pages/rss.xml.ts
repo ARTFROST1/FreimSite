@@ -5,7 +5,8 @@ import { SITE } from '../config/site';
 
 export async function GET(context: APIContext) {
   const posts = await getCollection('blog', ({ data }) => !data.draft);
-  posts.sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf());
+  // date — строка `YYYY-MM-DD` (см. blogPostSchema), сортируется лексикографически.
+  posts.sort((a, b) => b.data.date.localeCompare(a.data.date));
 
   return rss({
     title: `${SITE.name} — Блог`,
@@ -14,7 +15,8 @@ export async function GET(context: APIContext) {
     items: posts.map((post) => ({
       title: post.data.title,
       description: post.data.description,
-      pubDate: post.data.date,
+      // rss() ждёт Date — date у нас строка, поэтому оборачиваем.
+      pubDate: new Date(post.data.date),
       link: `/blog/${post.id}/`,
     })),
     customData: `<language>${SITE.lang}</language>`,

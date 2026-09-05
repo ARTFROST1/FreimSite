@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { buildContentSchema, assertCategoryDepth } from '../generate-content-schema';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { z } from 'astro/zod';
+import { blogPostSchema } from '../../src/config/schemas';
 
 describe('buildContentSchema', () => {
   it('includes exactly the client-editable collections', () => {
@@ -147,6 +149,18 @@ describe('buildContentSchema', () => {
     expect(p!.itemSchema['properties']).toHaveProperty('title');
   });
 
+  it('blog зарегистрирован как entries: .md, /blog, тело включено, дата format:date', () => {
+    const doc = buildContentSchema(); // как соседние тесты файла берут документ
+    const blog = doc.entries!.blog;
+    expect(blog.ext).toBe('.md');
+    expect(blog.routeBase).toBe('/blog');
+    expect(blog.body.enabled).toBe(true);
+    expect((blog.itemSchema as any).properties.date.format).toBe('date');
+    // Плоская коллекция: признака категорий нет — на нём стоит портал (вкладки, matchEntryPath).
+    const formats = Object.values((blog.itemSchema as any).properties).map((p: any) => p.format);
+    expect(formats).not.toContain('ref:categories');
+  });
+
   it('rejects a category whose parent is itself a child (depth > 2)', () => {
     expect(() =>
       assertCategoryDepth([
@@ -190,6 +204,12 @@ describe('buildContentSchema', () => {
         { id: 'b', name: 'B', parent: 'a' },
       ]),
     ).not.toThrow();
+  });
+
+  it('blogPostSchema представима в JSON Schema (z.coerce.date() здесь падал бы)', () => {
+    const json = z.toJSONSchema(blogPostSchema) as Record<string, any>;
+    expect(json.properties.date.format).toBe('date');
+    expect(json.properties.updated?.format).toBe('date');
   });
 
   // B3 (final review): z.toJSONSchema() marks every `.default(...)` field

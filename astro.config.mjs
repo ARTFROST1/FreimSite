@@ -164,8 +164,10 @@ export default defineConfig({
   // headings/bold/italic/lists/links (all render) plus a `<script>` and an
   // `onerror` `<img>` payload (both fully stripped) — `rehypeSanitize()`
   // with no argument already uses `defaultSchema`.
-  // Scope: THIS applies to `.md` content collections (products) only. The
-  // blog's `.mdx` pipeline is intentionally decoupled below
+  // Scope: THIS applies to every `.md` content collection — products AND the
+  // blog (client-authored posts through the portal are `.md`, same pipeline,
+  // same sanitizer). Only the blog's optional `.mdx` pipeline (dev-authored
+  // posts) is intentionally decoupled below
   // (`mdx({ extendMarkdownConfig: false })`) — MDX compiles to JSX and
   // sanitizing its HAST tree the same way risks stripping legitimate
   // MDX/JSX nodes; that pipeline's own hardening is a separate task.
@@ -274,11 +276,13 @@ export default defineConfig({
         return item;
       },
     }),
-    // extendMarkdownConfig: false — freezes the blog's .mdx pipeline against
-    // the `markdown` config above (and any future change to it). Without
-    // this, MDX inherits the markdown processor and would pick up
-    // rehypeSanitize too; that's out of scope here (see comment above the
-    // `markdown` key) and belongs to whoever hardens the blog pipeline.
+    // extendMarkdownConfig: false — freezes the blog's *.mdx* pipeline
+    // (dev-authored posts only) against the `markdown` config above. Blog
+    // `.md` posts (client-authored, through the portal) already run through
+    // that config and get rehypeSanitize like products do — this isolation
+    // is only about `.mdx`, which compiles to JSX; sanitizing MDX's own HAST
+    // tree the same way is out of scope here (see comment above the
+    // `markdown` key) and belongs to whoever hardens that pipeline.
     // НЕ СНИМАТЬ ЭТУ ИЗОЛЯЦИЮ «заодно с санитайзером»: rehype работает по
     // HAST и НЕ нейтрализует MDX/JSX — он бы резал легитимные MDX-узлы, не
     // закрывая настоящий вектор (MDX исполняет тело на сборке).

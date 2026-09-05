@@ -1,6 +1,7 @@
 import { z } from 'astro/zod';
 import {
   addressSchema,
+  blogPostSchema,
   categorySchema,
   faqItemSchema,
   featureSchema,
@@ -64,7 +65,8 @@ const MAX_ITEMS: Record<string, number> = {
 /**
  * Explicit allowlist of client-editable collections — mirrors
  * `src/content.config.ts`, but only the subset the CMS portal may write.
- * `blog` is intentionally absent (see docs/CONTENT.md "Блог" — open question).
+ * `blog` is a "многофайловая" entries-коллекция, not a single-file
+ * collection — it's registered in `ENTRIES` below, not here.
  */
 const COLLECTIONS: CollectionConfig[] = [
   {
@@ -248,8 +250,9 @@ export interface CollectionContract {
 /**
  * Contract for a "многофайловая" (one Markdown/MDX file per item) collection —
  * distinct from `CollectionContract`, which is a single JSON file holding an
- * array or a singleton object. Products live under `dir` as one `.mdx` per
- * item with frontmatter validated against `itemSchema`; `body` describes
+ * array or a singleton object. Products live under `dir` as one `.md` per
+ * item (the actual extension is whatever this contract's `ext` field says)
+ * with frontmatter validated against `itemSchema`; `body` describes
  * whether/how the portal edits the Markdown body below the frontmatter.
  */
 export interface EntriesContract {
@@ -271,6 +274,15 @@ const ENTRIES = [
     ext: '.md',
     routeBase: '/katalog',
     body: { enabled: true, format: 'markdown' as const, label: 'Подробное описание (необязательно)' },
+  },
+  {
+    name: 'blog',
+    label: 'Блог',
+    schema: blogPostSchema,
+    dir: 'src/content/blog',
+    ext: '.md',
+    routeBase: '/blog',
+    body: { enabled: true, format: 'markdown' as const, label: 'Текст статьи' },
   },
 ];
 

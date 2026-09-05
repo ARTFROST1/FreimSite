@@ -5,8 +5,9 @@
 No text that a client might want to change lives in `.astro`, `.ts`, or
 `.tsx`. The reason is practical, not stylistic: nothing that edits content
 through a form or a visual editor can write TypeScript. Content lives as
-JSON (or MDX for blog posts) under `src/content/`, validated by a Zod schema.
-Code holds structure and logic; content holds the words.
+JSON (or Markdown for blog posts and products) under `src/content/`,
+validated by a Zod schema. Code holds structure and logic; content holds
+the words.
 
 ## Where content lives
 
@@ -17,7 +18,7 @@ Code holds structure and logic; content holds the words.
 | `src/content/pages/pages.json` | Text for the About / Contacts / Gallery pages |
 | `src/content/catalog/categories.json` | Product category tree (max 2 levels deep) |
 | `src/content/products/*.md` | One file per product — frontmatter plus an optional markdown body |
-| `src/content/blog/*.mdx` | Blog posts |
+| `src/content/blog/*.{md,mdx}` | Blog posts — `.md` client-edited through the portal, `.mdx` developer-only |
 | `src/config/schemas.ts` | Zod schemas — shape, types, and form labels for all of the above |
 
 ## Zod schemas are the single source of truth
@@ -48,14 +49,15 @@ Most collections are one of:
 - **A singleton** — a JSON object with one fixed key (usually `"main"`),
   for a block that only ever has one instance (the hero, for example).
 
-Products are a third shape (`entries`): one file per record
-(`src/content/products/<slug>.md`) instead of one row in a shared JSON
-array, because each product needs its own page and its own body text.
-Categories are not part of that third shape — `src/content/catalog/categories.json`
-is an ordinary array collection, one JSON file holding the whole category
-tree, exactly like `features` or `reviews`. The full mechanics of `entries`
-— and of adding a collection at all — are in [cms.md](cms.md); this page
-only tells you what exists and where.
+Products and blog posts are a third shape (`entries`): one file per record
+(`src/content/products/<slug>.md`, `src/content/blog/<slug>.md`) instead of
+one row in a shared JSON array, because each record needs its own page and
+its own body text. Categories are not part of that third shape —
+`src/content/catalog/categories.json` is an ordinary array collection, one
+JSON file holding the whole category tree, exactly like `features` or
+`reviews`. The full mechanics of `entries` — and of adding a collection at
+all — are in [cms.md](cms.md); this page only tells you what exists and
+where.
 
 ## Adding your own collection, in short
 
@@ -75,16 +77,23 @@ invisible to the portal.
 
 ## The blog
 
-Posts are MDX files in `src/content/blog/`, with frontmatter validated by a
-Zod schema declared inline in `src/content.config.ts` (title, description,
-date, optional cover image, tags). The listing is paginated: `/blog/` is
-page one, `/blog/page/2/` onward are the rest, sized by `BLOG_PAGE_SIZE` in
+Posts are an `entries` collection at `src/content/blog/`, loaded from both
+`.md` and `.mdx` files, with frontmatter validated by `blogPostSchema` in
+`src/config/schemas.ts`. The listing is paginated: `/blog/` is page one,
+`/blog/page/2/` onward are the rest, sized by `BLOG_PAGE_SIZE` in
 `src/config/site.ts`.
 
-One thing worth knowing before you write a post that uses a JSX component
-inline (`<ComparisonTable rows={...} />`): a plain markdown editor doesn't
-understand that syntax and can corrupt it on save. If a post needs to stay
-editable by a non-technical client through a simple text field, keep its
-body to plain markdown.
+The file extension is who-edits-it: **`.md` posts are client-edited through
+the CMS portal** (the same plain markdown textarea as products), **`.mdx`
+posts are developer-only** and may use JSX components inline
+(`<ComparisonTable rows={...} />`). That split isn't stylistic — MDX
+executes its body as JS at build time, so an uncontrolled textarea writing
+`.mdx` can break the build on stray `{`/`</` characters; `.md` only ever
+runs through the markdown parser and a sanitizer. The generated contract
+registers the blog `entries` with `ext: ".md"`, so the portal only ever
+sees `.md` posts — `.mdx` files are invisible to it by design, not by
+convention. A guard test rejects the same slug existing as both `foo.md`
+and `foo.mdx`.
 
-Deeper material lives in Russian: [docs/CONTENT.md](../CONTENT.md).
+Deeper material, including the decision history, lives in Russian:
+[docs/CONTENT.md](../CONTENT.md).
