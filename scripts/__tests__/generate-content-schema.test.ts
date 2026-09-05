@@ -149,6 +149,18 @@ describe('buildContentSchema', () => {
     expect(p!.itemSchema['properties']).toHaveProperty('title');
   });
 
+  it('blog зарегистрирован как entries: .md, /blog, тело включено, дата format:date', () => {
+    const doc = buildContentSchema(); // как соседние тесты файла берут документ
+    const blog = doc.entries!.blog;
+    expect(blog.ext).toBe('.md');
+    expect(blog.routeBase).toBe('/blog');
+    expect(blog.body.enabled).toBe(true);
+    expect((blog.itemSchema as any).properties.date.format).toBe('date');
+    // Плоская коллекция: признака категорий нет — на нём стоит портал (вкладки, matchEntryPath).
+    const formats = Object.values((blog.itemSchema as any).properties).map((p: any) => p.format);
+    expect(formats).not.toContain('ref:categories');
+  });
+
   it('rejects a category whose parent is itself a child (depth > 2)', () => {
     expect(() =>
       assertCategoryDepth([

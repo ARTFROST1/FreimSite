@@ -1,6 +1,7 @@
 import { z } from 'astro/zod';
 import {
   addressSchema,
+  blogPostSchema,
   categorySchema,
   faqItemSchema,
   featureSchema,
@@ -64,7 +65,8 @@ const MAX_ITEMS: Record<string, number> = {
 /**
  * Explicit allowlist of client-editable collections — mirrors
  * `src/content.config.ts`, but only the subset the CMS portal may write.
- * `blog` is intentionally absent (see docs/CONTENT.md "Блог" — open question).
+ * `blog` is a "многофайловая" entries-коллекция, not a single-file
+ * collection — it's registered in `ENTRIES` below, not here.
  */
 const COLLECTIONS: CollectionConfig[] = [
   {
@@ -271,6 +273,15 @@ const ENTRIES = [
     ext: '.md',
     routeBase: '/katalog',
     body: { enabled: true, format: 'markdown' as const, label: 'Подробное описание (необязательно)' },
+  },
+  {
+    name: 'blog',
+    label: 'Блог',
+    schema: blogPostSchema,
+    dir: 'src/content/blog',
+    ext: '.md',
+    routeBase: '/blog',
+    body: { enabled: true, format: 'markdown' as const, label: 'Текст статьи' },
   },
 ];
 

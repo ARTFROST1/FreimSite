@@ -652,8 +652,8 @@ export const blogPostSchema = z.object({
     .string()
     .max(160)
     .describe('Короткое описание — до 160 символов, попадает в поисковую выдачу'),
-  date: z.iso.date().describe('Дата публикации'),
-  updated: z.iso.date().optional().describe('Дата обновления (необязательно)'),
+  date: z.iso.date().max(10).describe('Дата публикации'),
+  updated: z.iso.date().max(10).optional().describe('Дата обновления (необязательно)'),
   image: z
     .string()
     .max(MAX.path)

@@ -1548,6 +1548,85 @@
         ],
         "additionalProperties": false
       }
+    },
+    "blog": {
+      "label": "Блог",
+      "dir": "src/content/blog",
+      "ext": ".md",
+      "routeBase": "/blog",
+      "body": {
+        "enabled": true,
+        "format": "markdown",
+        "label": "Текст статьи"
+      },
+      "itemSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Заголовок статьи"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "Короткое описание — до 160 символов, попадает в поисковую выдачу"
+          },
+          "date": {
+            "type": "string",
+            "maxLength": 10,
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+            "description": "Дата публикации"
+          },
+          "updated": {
+            "description": "Дата обновления (необязательно)",
+            "type": "string",
+            "maxLength": 10,
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "image": {
+            "description": "Обложка статьи (загрузите файл; можно указать /images/… из public)",
+            "format": "image",
+            "type": "string",
+            "maxLength": 300
+          },
+          "imageAlt": {
+            "description": "Подпись к обложке (alt-текст)",
+            "type": "string",
+            "maxLength": 200
+          },
+          "tags": {
+            "default": [],
+            "description": "Теги — строка = тег",
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          "author": {
+            "description": "Автор (необязательно)",
+            "type": "string",
+            "maxLength": 200
+          },
+          "draft": {
+            "default": false,
+            "description": "Черновик — не показывается на сайте",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "title",
+          "description",
+          "date"
+        ],
+        "additionalProperties": false
+      }
     }
   }
 }
