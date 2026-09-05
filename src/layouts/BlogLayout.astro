@@ -27,8 +27,10 @@ interface Heading {
 interface Props {
   title: string;
   description: string;
-  date: Date;
-  updated?: Date;
+  // Строка `YYYY-MM-DD` (см. blogPostSchema) — не Date, ISO-строку z.iso.date()
+  // отдаёт как есть, formatDate() из lib/utils.ts принимает Date | string.
+  date: string;
+  updated?: string;
   image?: string;
   imageAlt?: string;
   author?: string;
@@ -115,7 +117,7 @@ const og = await resolveOgImage(image);
 
     <header class="mb-8">
       <div class="mb-3 flex flex-wrap items-center gap-3 text-sm text-muted">
-        <time datetime={date.toISOString()}>{formatDate(date)}</time>
+        <time datetime={date}>{formatDate(date)}</time>
         {tags.length > 0 && <span class="text-line">•</span>}
         {tags.map((t) => <span class="text-accent">#{t}</span>)}
       </div>

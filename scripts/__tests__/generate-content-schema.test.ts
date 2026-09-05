@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { buildContentSchema, assertCategoryDepth } from '../generate-content-schema';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { z } from 'astro/zod';
+import { blogPostSchema } from '../../src/config/schemas';
 
 describe('buildContentSchema', () => {
   it('includes exactly the client-editable collections', () => {
@@ -190,6 +192,12 @@ describe('buildContentSchema', () => {
         { id: 'b', name: 'B', parent: 'a' },
       ]),
     ).not.toThrow();
+  });
+
+  it('blogPostSchema представима в JSON Schema (z.coerce.date() здесь падал бы)', () => {
+    const json = z.toJSONSchema(blogPostSchema) as Record<string, any>;
+    expect(json.properties.date.format).toBe('date');
+    expect(json.properties.updated?.format).toBe('date');
   });
 
   // B3 (final review): z.toJSONSchema() marks every `.default(...)` field

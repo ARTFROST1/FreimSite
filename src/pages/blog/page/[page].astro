@@ -14,7 +14,8 @@ import { BLOG_PAGE_SIZE } from '../../../config/site';
 
 export const getStaticPaths = (async ({ paginate }) => {
   const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
-    (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
+    // date — строка `YYYY-MM-DD` (см. blogPostSchema), сортируется лексикографически.
+    (a, b) => b.data.date.localeCompare(a.data.date),
   );
   return paginate(posts, { pageSize: BLOG_PAGE_SIZE }).filter(
     ({ params }) => params.page !== undefined && params.page !== '1',

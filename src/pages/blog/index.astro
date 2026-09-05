@@ -10,7 +10,8 @@ import BlogListing from '../../components/blog/BlogListing.astro';
 import { BLOG_PAGE_SIZE } from '../../config/site';
 
 const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
-  (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
+  // date — строка `YYYY-MM-DD` (см. blogPostSchema), сортируется лексикографически.
+  (a, b) => b.data.date.localeCompare(a.data.date),
 );
 const totalPages = Math.max(1, Math.ceil(posts.length / BLOG_PAGE_SIZE));
 ---

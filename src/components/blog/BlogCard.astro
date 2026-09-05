@@ -24,7 +24,7 @@ const href = `/blog/${post.id}/`;
   </a>
   <div class="flex flex-1 flex-col p-5">
     <div class="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted">
-      <time datetime={date.toISOString()}>{formatDate(date)}</time>
+      <time datetime={date}>{formatDate(date)}</time>
       {tags.slice(0, 2).map((t) => <span class="text-accent">#{t}</span>)}
     </div>
     <h2 class="text-lg font-semibold leading-snug">

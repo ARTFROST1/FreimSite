@@ -640,6 +640,33 @@ export const productSchema = z.object({
 });
 export type CatalogProduct = z.infer<typeof productSchema>;
 
+/**
+ * Статья блога — entries-коллекция (файл-на-запись, `src/content/blog/`).
+ * `date`/`updated` — СТРОКИ `YYYY-MM-DD` (`z.iso.date()`), не `z.coerce.date()`:
+ * Date непредставим в JSON Schema — генератор контракта падает, а портал
+ * не смог бы нарисовать поле. ISO-строки сортируются лексикографически.
+ */
+export const blogPostSchema = z.object({
+  title: z.string().min(1).max(MAX.line).describe('Заголовок статьи'),
+  description: z
+    .string()
+    .max(160)
+    .describe('Короткое описание — до 160 символов, попадает в поисковую выдачу'),
+  date: z.iso.date().describe('Дата публикации'),
+  updated: z.iso.date().optional().describe('Дата обновления (необязательно)'),
+  image: z
+    .string()
+    .max(MAX.path)
+    .optional()
+    .describe('Обложка статьи (загрузите файл; можно указать /images/… из public)')
+    .meta({ format: 'image' }),
+  imageAlt: z.string().max(MAX.line).optional().describe('Подпись к обложке (alt-текст)'),
+  tags: z.array(z.string().max(MAX.label)).max(20).default([]).describe('Теги — строка = тег'),
+  author: z.string().max(MAX.line).optional().describe('Автор (необязательно)'),
+  draft: z.boolean().default(false).describe('Черновик — не показывается на сайте'),
+});
+export type BlogPost = z.infer<typeof blogPostSchema>;
+
 export type Feature = z.infer<typeof featureSchema>;
 export type Review = z.infer<typeof reviewSchema>;
 export type PricingPlan = z.infer<typeof pricingPlanSchema>;

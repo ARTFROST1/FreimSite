@@ -1,11 +1,8 @@
 import { defineCollection } from 'astro:content';
 import { file, glob } from 'astro/loaders';
-// Zod ships with Astro (v4 since Astro 6). Importing `z` from 'astro:content'
-// still works but is deprecated — 'astro/zod' is the supported path and
-// guarantees the same Zod version Astro validates against.
-import { z } from 'astro/zod';
 import {
   addressSchema,
+  blogPostSchema,
   categorySchema,
   faqItemSchema,
   featureSchema,
@@ -26,24 +23,12 @@ import {
   timelineItemSchema,
 } from './config/schemas';
 
-/**
- * Blog collection. Frontmatter is validated by Zod at build time — a typo in
- * a field name or a missing required field fails the build instead of shipping
- * broken pages. Add more collections here (e.g. `services`, `projects`).
- */
+/** Blog: `.md` правит клиент через портал, `.mdx` — разработчицкие статьи
+ *  с компонентами; порталу они невидимы (контракт объявляет ext '.md').
+ *  Спека: FrostDeploy docs/superpowers/specs/2026-09-05-blog-entries-design.md */
 const blog = defineCollection({
-  loader: glob({ pattern: '**/*.mdx', base: './src/content/blog' }),
-  schema: z.object({
-    title: z.string(),
-    description: z.string().max(160),
-    date: z.coerce.date(),
-    updated: z.coerce.date().optional(),
-    image: z.string().optional(),
-    imageAlt: z.string().optional(),
-    tags: z.array(z.string()).default([]),
-    author: z.string().optional(),
-    draft: z.boolean().default(false),
-  }),
+  loader: glob({ pattern: '**/*.{md,mdx}', base: './src/content/blog' }),
+  schema: blogPostSchema,
 });
 
 /**
