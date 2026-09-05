@@ -10,7 +10,7 @@
  *     to PreOrder (a made-to-order product isn't "in stock").
  */
 import { describe, it, expect } from 'vitest';
-import { localBusinessSchema, productSchema } from '../schema';
+import { articleSchema, localBusinessSchema, productSchema } from '../schema';
 
 describe('localBusinessSchema', () => {
   it('never includes aggregateRating, even if the caller tries to pass one', () => {
@@ -90,5 +90,35 @@ describe('productSchema', () => {
       image: '/images/tovar.webp',
     });
     expect(schema).not.toHaveProperty('offers');
+  });
+});
+
+describe('articleSchema', () => {
+  // Класс «''-от-портала»: незаполненное необязательное поле приходит из
+  // портала пустой строкой, не `undefined`. `??` её не ловит — `author`
+  // рендерился бы как `{ name: '' }`, что хуже отсутствия автора вовсе.
+  it('falls back to the site name when author is an empty string from the portal', () => {
+    const schema = articleSchema({
+      title: 'Заголовок',
+      description: 'Описание',
+      url: '/blog/post/',
+      datePublished: '2026-01-01',
+      author: '',
+    });
+    const author = schema.author as Record<string, unknown>;
+    expect(author.name).not.toBe('');
+    expect(author.name).toBeTruthy();
+  });
+
+  it('uses a real author name when one is given', () => {
+    const schema = articleSchema({
+      title: 'Заголовок',
+      description: 'Описание',
+      url: '/blog/post/',
+      datePublished: '2026-01-01',
+      author: 'Иван Иванов',
+    });
+    const author = schema.author as Record<string, unknown>;
+    expect(author.name).toBe('Иван Иванов');
   });
 });

@@ -107,7 +107,7 @@ const og = await resolveOgImage(image);
   ogImage={og.src}
   ogImageWidth={og.width}
   ogImageHeight={og.height}
-  ogImageAlt={imageAlt ?? title}
+  ogImageAlt={imageAlt || title}
   breadcrumbs={crumbs}
 >
   <JsonLd slot="head" schema={schema} />
@@ -129,7 +129,7 @@ const og = await resolveOgImage(image);
       image && (
         <ContentImage
           src={image}
-          alt={imageAlt ?? title}
+          alt={imageAlt || title}
           widths={[640, 1024, 1200]}
           sizes="(min-width: 768px) 768px, 100vw"
           width={1200}

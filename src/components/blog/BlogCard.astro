@@ -13,8 +13,8 @@ const href = `/blog/${post.id}/`;
 <article class="card group flex flex-col">
   <a href={href} class="block aspect-[16/9] overflow-hidden">
     <ContentImage
-      src={image ?? '/images/placeholder.svg'}
-      alt={imageAlt ?? title}
+      src={image || '/images/placeholder.svg'}
+      alt={imageAlt || title}
       widths={[400, 800]}
       sizes="(min-width: 768px) 33vw, 100vw"
       width={800}

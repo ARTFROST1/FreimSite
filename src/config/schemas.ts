@@ -654,12 +654,7 @@ export const blogPostSchema = z.object({
     .describe('Короткое описание — до 160 символов, попадает в поисковую выдачу'),
   date: z.iso.date().max(10).describe('Дата публикации'),
   updated: z.iso.date().max(10).optional().describe('Дата обновления (необязательно)'),
-  image: z
-    .string()
-    .max(MAX.path)
-    .optional()
-    .describe('Обложка статьи (загрузите файл; можно указать /images/… из public)')
-    .meta({ format: 'image' }),
+  image: optionalImage('Обложка статьи (загрузите файл; можно указать /images/… из public)'),
   imageAlt: z.string().max(MAX.line).optional().describe('Подпись к обложке (alt-текст)'),
   tags: z.array(z.string().max(MAX.label)).max(20).default([]).describe('Теги — строка = тег'),
   author: z.string().max(MAX.line).optional().describe('Автор (необязательно)'),
